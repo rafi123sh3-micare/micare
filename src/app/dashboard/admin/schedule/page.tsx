@@ -11,6 +11,7 @@ import { sendNotification, requestPushPermission } from '@/lib/notifications';
 import { Modal } from '@/components/ui/Modal';
 import { StatusPill } from '@/components/ui/StatusPill';
 import DatePicker from '@/components/ui/DatePicker';
+import TimePicker from '@/components/ui/TimePicker';
 
 const days = [
   { index: 0, name: 'রবিবার' },
@@ -442,23 +443,22 @@ const filteredSchedules = schedules.filter((s) => {
             </select>
 
             <div className="grid grid-cols-2 gap-3">
-              <input
-                type="time"
-                value={newShift.start_time}
-                onChange={(e) =>
-                  setNewShift({ ...newShift, start_time: e.target.value })
-                }
-                className="input"
-              />
-
-              <input
-                type="time"
-                value={newShift.end_time}
-                onChange={(e) =>
-                  setNewShift({ ...newShift, end_time: e.target.value })
-                }
-                className="input"
-              />
+              <div>
+                <label className="text-sm font-medium text-slate-600 mb-2 block">শুরুর সময়</label>
+                <TimePicker
+                  value={newShift.start_time}
+                  onChange={(time) => setNewShift({ ...newShift, start_time: time })}
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-600 mb-2 block">শেষের সময়</label>
+                <TimePicker
+                  value={newShift.end_time}
+                  onChange={(time) => setNewShift({ ...newShift, end_time: time })}
+                  className="w-full"
+                />
+              </div>
             </div>
 
             <label className="flex items-start gap-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200 cursor-pointer hover:from-purple-100 hover:to-indigo-100 transition">
