@@ -561,20 +561,18 @@ const filteredSchedules = schedules.filter((s) => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-sm font-medium text-slate-600 mb-2 block">শুরুর সময়</label>
-                  <input
-                    type="time"
+                  <TimePicker
                     value={editingSchedule.start_time || ''}
-                    onChange={(e) => setEditingSchedule({ ...editingSchedule, start_time: e.target.value })}
-                    className="input w-full"
+                    onChange={(time) => setEditingSchedule({ ...editingSchedule, start_time: time })}
+                    className="w-full"
                   />
                 </div>
                 <div>
                   <label className="text-sm font-medium text-slate-600 mb-2 block">শেষের সময়</label>
-                  <input
-                    type="time"
+                  <TimePicker
                     value={editingSchedule.end_time || ''}
-                    onChange={(e) => setEditingSchedule({ ...editingSchedule, end_time: e.target.value })}
-                    className="input w-full"
+                    onChange={(time) => setEditingSchedule({ ...editingSchedule, end_time: time })}
+                    className="w-full"
                   />
                 </div>
               </div>
