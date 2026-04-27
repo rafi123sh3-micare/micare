@@ -171,63 +171,79 @@ const statusOrder: Record<string, number> = {
       const doctorData = JSON.parse(localStorage.getItem('doctorData') || 'null');
 
       if (newStatus === 'confirmed') {
-        await sendNotification('appointment_confirmed_patient', {
-          patientId: apt.patient_id,
-        }, {
-          patientName: apt.patients?.name,
-          doctorName: apt.doctors?.name,
-          date: apt.date,
-        });
-
-        await sendNotification('appointment_confirmed_doctor', {
-          doctorId: doctorData?.id,
-        }, {
-          patientName: apt.patients?.name,
-          date: apt.date,
-        });
-
-        if (apt.type === 'teleconsult') {
-          await sendNotification('teleconsult_ready_patient', {
+        try {
+          await sendNotification('appointment_confirmed_patient', {
             patientId: apt.patient_id,
           }, {
+            patientName: apt.patients?.name,
             doctorName: apt.doctors?.name,
+            date: apt.date,
           });
-        }
-      } else if (newStatus === 'cancelled') {
-        await sendNotification('appointment_cancelled_patient', {
-          patientId: apt.patient_id,
-        }, {
-          patientName: apt.patients?.name,
-          doctorName: apt.doctors?.name,
-        });
+        } catch (e) {}
 
-        await sendNotification('appointment_cancelled_doctor', {
-          doctorId: doctorData?.id,
-        }, {
-          patientName: apt.patients?.name,
-          date: apt.date,
-        });
-
-        await sendNotification('appointment_cancelled_admin', {
-          adminIds: [],
-        }, {
-          patientName: apt.patients?.name,
-          doctorName: apt.doctors?.name,
-        });
-
-        if (apt.type === 'teleconsult') {
-          await sendNotification('teleconsult_cancelled_patient', {
-            patientId: apt.patient_id,
-          }, {
-            doctorName: apt.doctors?.name,
-          });
-
-          await sendNotification('teleconsult_cancelled_doctor', {
+        try {
+          await sendNotification('appointment_confirmed_doctor', {
             doctorId: doctorData?.id,
           }, {
             patientName: apt.patients?.name,
             date: apt.date,
           });
+        } catch (e) {}
+
+        if (apt.type === 'teleconsult') {
+          try {
+            await sendNotification('teleconsult_ready_patient', {
+              patientId: apt.patient_id,
+            }, {
+              doctorName: apt.doctors?.name,
+            });
+          } catch (e) {}
+        }
+      } else if (newStatus === 'cancelled') {
+        try {
+          await sendNotification('appointment_cancelled_patient', {
+            patientId: apt.patient_id,
+          }, {
+            patientName: apt.patients?.name,
+            doctorName: apt.doctors?.name,
+          });
+        } catch (e) {}
+
+        try {
+          await sendNotification('appointment_cancelled_doctor', {
+            doctorId: doctorData?.id,
+          }, {
+            patientName: apt.patients?.name,
+            date: apt.date,
+          });
+        } catch (e) {}
+
+        try {
+          await sendNotification('appointment_cancelled_admin', {
+            adminIds: [],
+          }, {
+            patientName: apt.patients?.name,
+            doctorName: apt.doctors?.name,
+          });
+        } catch (e) {}
+
+        if (apt.type === 'teleconsult') {
+          try {
+            await sendNotification('teleconsult_cancelled_patient', {
+              patientId: apt.patient_id,
+            }, {
+              doctorName: apt.doctors?.name,
+            });
+          } catch (e) {}
+
+          try {
+            await sendNotification('teleconsult_cancelled_doctor', {
+              doctorId: doctorData?.id,
+            }, {
+              patientName: apt.patients?.name,
+              date: apt.date,
+            });
+          } catch (e) {}
         }
       }
 

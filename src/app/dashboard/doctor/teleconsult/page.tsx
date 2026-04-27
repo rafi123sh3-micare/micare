@@ -132,11 +132,13 @@ export default function DoctorTeleconsult() {
     if (apt) {
       requestPushPermission();
       
-      await sendNotification('teleconsult_ready_patient', {
-        patientId: apt.patient_id,
-      }, {
-        doctorName: doctorData?.name,
-      });
+      try {
+        await sendNotification('teleconsult_ready_patient', {
+          patientId: apt.patient_id,
+        }, {
+          doctorName: doctorData?.name,
+        });
+      } catch (e) {}
       
       if (meetingLink) {
         window.open(meetingLink, '_blank');

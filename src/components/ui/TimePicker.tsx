@@ -10,19 +10,53 @@ interface TimePickerProps {
 
 export default function TimePicker({ value, onChange, className = '' }: TimePickerProps) {
   const parseTime = (time: string) => {
-    if (!time) return { hours: '09', minutes: '00' };
-    const [h, m] = time.split(':');
-    return { hours: h || '09', minutes: m || '00' };
+    if (!time) return { hours: '09', minutes: '00', period: 'AM' };
+    
+    const upperTime = time.toUpperCase();
+    const hasAM = upperTime.includes('AM');
+    const hasPM = upperTime.includes('PM');
+    
+    let h: string, m: string, period: string;
+    
+    if (hasAM || hasPM) {
+      period = hasPM ? 'PM' : 'AM';
+      const parts = time.replace(/[APap][Mm]/, '').split(':');
+      h = parts[0]?.padStart(2, '0') || '09';
+      m = parts[1]?.slice(0, 2).padStart(2, '0') || '00';
+    } else {
+      const parts = time.split(':');
+      h = parts[0]?.padStart(2, '0') || '09';
+      m = parts[1]?.slice(0, 2).padStart(2, '0') || '00';
+      const hourNum = parseInt(h);
+      if (hourNum === 0) {
+        h = '12';
+        period = 'AM';
+      } else if (hourNum === 12) {
+        h = '12';
+        period = 'PM';
+      } else if (hourNum > 12) {
+        h = String(hourNum - 12).padStart(2, '0');
+        period = 'PM';
+      } else {
+        period = 'AM';
+      }
+    }
+    
+    return { hours: h, minutes: m, period };
   };
 
-  const { hours, minutes } = parseTime(value);
+  const { hours, minutes, period } = parseTime(value);
 
-  const handleChange = (h: string, m: string) => {
-    onChange(`${h}:${m}`);
+  const handleChange = (h: string, m: string, p: string) => {
+    let hour24 = parseInt(h);
+    if (p === 'PM' && hour24 !== 12) hour24 += 12;
+    if (p === 'AM' && hour24 === 12) hour24 = 0;
+    const hourStr = String(hour24).padStart(2, '0');
+    onChange(`${hourStr}:${m}`);
   };
 
   const hourOptions = [];
-  for (let i = 0; i < 24; i++) {
+  for (let i = 1; i <= 12; i++) {
     hourOptions.push(
       <option key={i} value={String(i).padStart(2, '0')}>
         {String(i).padStart(2, '0')}
@@ -43,7 +77,7 @@ export default function TimePicker({ value, onChange, className = '' }: TimePick
     <div className={`flex items-center gap-1 ${className}`}>
       <select
         value={hours}
-        onChange={(e) => handleChange(e.target.value, minutes)}
+        onChange={(e) => handleChange(e.target.value, minutes, period)}
         className="input py-2 px-2 text-center appearance-none cursor-pointer"
       >
         {hourOptions}
@@ -51,10 +85,18 @@ export default function TimePicker({ value, onChange, className = '' }: TimePick
       <span className="text-slate-600 font-medium">:</span>
       <select
         value={minutes}
-        onChange={(e) => handleChange(hours, e.target.value)}
+        onChange={(e) => handleChange(hours, e.target.value, period)}
         className="input py-2 px-2 text-center appearance-none cursor-pointer"
       >
         {minuteOptions}
+      </select>
+      <select
+        value={period}
+        onChange={(e) => handleChange(hours, minutes, e.target.value)}
+        className="input py-2 px-2 text-center appearance-none cursor-pointer ml-1"
+      >
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
       </select>
     </div>
   );

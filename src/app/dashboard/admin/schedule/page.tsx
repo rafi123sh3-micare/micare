@@ -107,21 +107,26 @@ const filteredSchedules = schedules.filter((s) => {
   });
 
   let finalSchedules = filteredSchedules;
-  if (filteredSchedules.length === 0 && filterDate === todayISO) {
-    finalSchedules = schedules.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 50);
-  }
 
-  const formatTime = (t: string) => (t ? t.slice(0, 5) : '');
+  const formatTime = (t: string) => {
+    if (!t) return '';
+    const hour = parseInt(t.split(':')[0]);
+    const minute = t.split(':')[1]?.slice(0, 2) || '00';
+    const period = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+    return `${String(hour12).padStart(2, '0')}:${minute} ${period}`;
+  };
 
   const handleAddShift = async () => {
     if (
-      !newShift.doctor_id ||
-      !newShift.start_time ||
-      !newShift.end_time
+      !newShift.doctor_id
     ) {
       toast.error('সব তথ্য পূরণ করুন');
       return;
     }
+
+    const startTime = newShift.start_time || '09:00';
+    const endTime = newShift.end_time || '09:00';
 
     if (newShift.repeat_weekly && newShift.selected_days.length === 0) {
       toast.error('দিন নির্বাচন করুন');
@@ -155,8 +160,8 @@ const filteredSchedules = schedules.filter((s) => {
             schedulesToInsert.push({
               doctor_id: newShift.doctor_id,
               date: dateStr,
-              start_time: newShift.start_time,
-              end_time: newShift.end_time,
+              start_time: startTime,
+              end_time: endTime,
               status: 'pending',
               is_repeating: true,
             });
@@ -172,14 +177,16 @@ const filteredSchedules = schedules.filter((s) => {
           
           for (const schedule of schedulesToInsert) {
             const dayName = days[new Date(schedule.date).getDay()]?.name || '';
-            await sendNotification('schedule_pending_doctor', {
-              doctorId: newShift.doctor_id,
-            }, {
-              doctorName: doctor?.name,
-              date: dayName,
-              startTime: newShift.start_time,
-              endTime: newShift.end_time,
-            });
+            try {
+              await sendNotification('schedule_pending_doctor', {
+                doctorId: newShift.doctor_id,
+              }, {
+                doctorName: doctor?.name,
+                date: dayName,
+                startTime: startTime,
+                endTime: endTime,
+              });
+            } catch (e) {}
           }
           
           toast.success(`${schedulesToInsert.length}টি শিফট যোগ হয়েছে! (${schedulesToInsert.map(s => days[new Date(s.date).getDay()]?.name).join(', ')})`);
@@ -188,8 +195,8 @@ const filteredSchedules = schedules.filter((s) => {
         const { error } = await supabase.from('schedules').insert({
           doctor_id: newShift.doctor_id,
           date: newShift.date,
-          start_time: newShift.start_time,
-          end_time: newShift.end_time,
+          start_time: startTime,
+          end_time: endTime,
           status: 'pending',
         });
 
@@ -198,14 +205,16 @@ const filteredSchedules = schedules.filter((s) => {
         } else {
           requestPushPermission();
           
-          await sendNotification('schedule_pending_doctor', {
-            doctorId: newShift.doctor_id,
-          }, {
-            doctorName: doctor?.name,
-            date: newShift.date,
-            startTime: newShift.start_time,
-            endTime: newShift.end_time,
-          });
+          try {
+            await sendNotification('schedule_pending_doctor', {
+              doctorId: newShift.doctor_id,
+            }, {
+              doctorName: doctor?.name,
+              date: newShift.date,
+              startTime: startTime,
+              endTime: endTime,
+            });
+          } catch (e) {}
           
           toast.success('শিফট যোগ হয়েছে! (অপেক্ষায়)');
         }

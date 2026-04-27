@@ -116,7 +116,9 @@ export default function AdminDoctors() {
   };
 
   const copyPasscode = (code: string) => {
-    navigator.clipboard.writeText(code);
+    try {
+      navigator.clipboard.writeText(code);
+    } catch (e) {}
     toast.success('পাসকোড কপি হয়েছে!');
   };
 

@@ -269,33 +269,41 @@ export default function AdminAppointments() {
       requestPushPermission();
 
       if (newStatus === 'confirmed') {
-        await sendNotification('appointment_confirmed_patient', {
-          patientId: apt.patient_id,
-        }, {
-          patientName: apt.patients?.name,
-          doctorName: apt.doctors?.name,
-          date: apt.date,
-        });
-
-        await sendNotification('appointment_confirmed_doctor', {
-          doctorId: apt.doctor_id,
-        }, {
-          patientName: apt.patients?.name,
-          date: apt.date,
-        });
-
-        if (apt.type === 'teleconsult') {
-          await sendNotification('teleconsult_ready_patient', {
+        try {
+          await sendNotification('appointment_confirmed_patient', {
             patientId: apt.patient_id,
           }, {
+            patientName: apt.patients?.name,
             doctorName: apt.doctors?.name,
+            date: apt.date,
           });
+        } catch (e) {}
 
-          await sendNotification('teleconsult_ready_doctor', {
+        try {
+          await sendNotification('appointment_confirmed_doctor', {
             doctorId: apt.doctor_id,
           }, {
             patientName: apt.patients?.name,
+            date: apt.date,
           });
+        } catch (e) {}
+
+        if (apt.type === 'teleconsult') {
+          try {
+            await sendNotification('teleconsult_ready_patient', {
+              patientId: apt.patient_id,
+            }, {
+              doctorName: apt.doctors?.name,
+            });
+          } catch (e) {}
+
+          try {
+            await sendNotification('teleconsult_ready_doctor', {
+              doctorId: apt.doctor_id,
+            }, {
+              patientName: apt.patients?.name,
+            });
+          } catch (e) {}
         }
       }
 
@@ -341,38 +349,48 @@ export default function AdminAppointments() {
       requestPushPermission();
 
       if (apt.type === 'teleconsult') {
-        await sendNotification('teleconsult_cancelled_patient', {
-          patientId: apt.patient_id,
-        }, {
-          doctorName: apt.doctors?.name,
-        });
+        try {
+          await sendNotification('teleconsult_cancelled_patient', {
+            patientId: apt.patient_id,
+          }, {
+            doctorName: apt.doctors?.name,
+          });
+        } catch (e) {}
 
-        await sendNotification('teleconsult_cancelled_doctor', {
-          doctorId: apt.doctor_id,
-        }, {
-          patientName: apt.patients?.name,
-        });
+        try {
+          await sendNotification('teleconsult_cancelled_doctor', {
+            doctorId: apt.doctor_id,
+          }, {
+            patientName: apt.patients?.name,
+          });
+        } catch (e) {}
       } else {
-        await sendNotification('appointment_cancelled_patient', {
-          patientId: apt.patient_id,
-        }, {
-          patientName: apt.patients?.name,
-          doctorName: apt.doctors?.name,
-        });
+        try {
+          await sendNotification('appointment_cancelled_patient', {
+            patientId: apt.patient_id,
+          }, {
+            patientName: apt.patients?.name,
+            doctorName: apt.doctors?.name,
+          });
+        } catch (e) {}
 
-        await sendNotification('appointment_cancelled_doctor', {
-          doctorId: apt.doctor_id,
-        }, {
-          patientName: apt.patients?.name,
-        });
+        try {
+          await sendNotification('appointment_cancelled_doctor', {
+            doctorId: apt.doctor_id,
+          }, {
+            patientName: apt.patients?.name,
+          });
+        } catch (e) {}
       }
 
-      await sendNotification('appointment_cancelled_admin', {
-        adminIds: [],
-      }, {
-        patientName: apt.patients?.name,
-        doctorName: apt.doctors?.name,
-      });
+      try {
+        await sendNotification('appointment_cancelled_admin', {
+          adminIds: [],
+        }, {
+          patientName: apt.patients?.name,
+          doctorName: apt.doctors?.name,
+        });
+      } catch (e) {}
 
       toast.success('অ্যাপয়েন্টমেন্ট বাতিল হয়েছে');
       loadData();

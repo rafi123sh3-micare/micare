@@ -166,23 +166,27 @@ setLoading(false);
           .eq('role', 'admin');
         const adminIds = adminUsers?.map(u => u.id) || [];
 
-        await sendNotification('appointment_booked_admin', {
-          adminIds,
-          doctorId: selectedDoctor.id,
-        }, {
-          patientName: patientData.name,
-          doctorName: selectedDoctor.name,
-          date: selectedDate,
-          time: selectedSlot.start,
-        });
+        try {
+          await sendNotification('appointment_booked_admin', {
+            adminIds,
+            doctorId: selectedDoctor.id,
+          }, {
+            patientName: patientData.name,
+            doctorName: selectedDoctor.name,
+            date: selectedDate,
+            time: selectedSlot.start,
+          });
+        } catch (e) {}
 
-        await sendNotification('appointment_booked_doctor', {
-          doctorId: selectedDoctor.id,
-        }, {
-          patientName: patientData.name,
-          date: selectedDate,
-          time: selectedSlot.start,
-        });
+        try {
+          await sendNotification('appointment_booked_doctor', {
+            doctorId: selectedDoctor.id,
+          }, {
+            patientName: patientData.name,
+            date: selectedDate,
+            time: selectedSlot.start,
+          });
+        } catch (e) {}
 
         toast.success('আপনার অনুরোধ প্রক্রিয়াধীন আছে');
         router.push('/dashboard/patient/appointments');
