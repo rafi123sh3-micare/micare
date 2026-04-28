@@ -72,12 +72,19 @@ export default function PatientBook() {
   async function loadDoctorSchedules() {
     if (!selectedDoctor || !selectedDate) return;
 
-    const { data: scheduleData } = await supabase
-      .from('schedules')
-      .select('*')
-      .eq('doctor_id', selectedDoctor.id)
-      .eq('date', selectedDate)
-      .in('status', ['active', 'confirmed']);
+const start = new Date(selectedDate);
+start.setHours(0, 0, 0, 0);
+
+const end = new Date(selectedDate);
+end.setHours(23, 59, 59, 999);
+
+const { data: scheduleData } = await supabase
+  .from('schedules')
+  .select('*')
+  .eq('doctor_id', selectedDoctor.id)
+  .gte('date', start.toISOString())
+  .lte('date', end.toISOString())
+  .in('status', ['active', 'confirmed']);
 
     console.log('Schedule query:', { doctorId: selectedDoctor.id, date: selectedDate, data: scheduleData });
 
@@ -92,7 +99,8 @@ export default function PatientBook() {
         const slotEndTime = s.end_time?.substring(0, 5);
         if (!slotEndTime) return false;
         
-        if (selectedDate !== todayStr) return true;
+        const today = new Date().toISOString().split('T')[0];
+        if (selectedDate !== today) return true;
         
         const [endHours, endMinutes] = slotEndTime.split(':').map(Number);
         const endMinutesTotal = endHours * 60 + endMinutes;
