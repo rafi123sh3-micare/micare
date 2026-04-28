@@ -147,7 +147,7 @@ export default function AdminReports() {
         return {
           name: doc.name,
           appointments: filteredApts.length,
-          teleconsult: filteredApts.filter((a: any) => a.type === 'teleconsult').length,
+          teleconsult: filteredApts.filter((a: any) => a.type === 'teleconsult' && (a.status === 'confirmed' || a.status === 'completed')).length,
           completed: filteredApts.filter((a: any) => a.status === 'completed').length,
         };
       });
@@ -166,19 +166,19 @@ export default function AdminReports() {
     const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const firstDayStr = `${firstDayOfMonth.getFullYear()}-${String(firstDayOfMonth.getMonth() + 1).padStart(2, '0')}-${String(firstDayOfMonth.getDate()).padStart(2, '0')}`;
 
-    const docStats = cachedDoctors.map((doc: any) => {
-      const filteredApts = statsViewMode === 'daily' 
-        ? cachedApts.filter((a: any) => a.doctor_id === doc.id && a.date === todayStr)
-        : cachedApts.filter((a: any) => a.doctor_id === doc.id && a.date >= firstDayStr);
-      return {
-        name: doc.name,
-        appointments: filteredApts.length,
-        teleconsult: filteredApts.filter((a: any) => a.type === 'teleconsult').length,
-        completed: filteredApts.filter((a: any) => a.status === 'completed').length,
-      };
-    });
-    setDoctorStats(docStats);
-  }
+      const docStats = cachedDoctors.map((doc: any) => {
+        const filteredApts = statsViewMode === 'daily' 
+          ? cachedApts.filter((a: any) => a.doctor_id === doc.id && a.date === todayStr)
+          : cachedApts.filter((a: any) => a.doctor_id === doc.id && a.date >= firstDayStr);
+        return {
+          name: doc.name,
+          appointments: filteredApts.length,
+          teleconsult: filteredApts.filter((a: any) => a.type === 'teleconsult' && (a.status === 'confirmed' || a.status === 'completed')).length,
+          completed: filteredApts.filter((a: any) => a.status === 'completed').length,
+        };
+      });
+      setDoctorStats(docStats);
+    }
 
   async function handleAddMoney() {
     const amount = Number(addedAmount);

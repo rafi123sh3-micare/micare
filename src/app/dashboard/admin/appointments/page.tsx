@@ -100,18 +100,12 @@ export default function AdminAppointments() {
       return;
     }
 
-    const targetDate = new Date(walkinPatient.date);
-    const weekEnd = new Date(targetDate);
-    weekEnd.setDate(weekEnd.getDate() + 7);
-
     const { data } = await supabase
       .from('schedules')
       .select('*')
       .eq('doctor_id', walkinPatient.doctor_id)
-      .gte('date', walkinPatient.date)
-      .lt('date', weekEnd.toISOString().split('T')[0])
+      .eq('date', walkinPatient.date)
       .in('status', ['active', 'confirmed'])
-      .order('date', { ascending: true })
       .order('start_time');
 
     if (data && data.length > 0) {
