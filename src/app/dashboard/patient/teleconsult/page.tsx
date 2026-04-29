@@ -190,9 +190,22 @@ export default function PatientTeleconsult() {
                     <Video className="w-5 h-5" /> কলে যোগ দিন
                   </button>
                 )}
+                {apt.status === 'completed' && apt.teleconsult_link && (
+                  <button
+                    onClick={() => joinCall(apt.teleconsult_link)}
+                    className="w-full btn-primary py-3 flex items-center justify-center gap-2"
+                  >
+                    <Video className="w-5 h-5" /> কলে যোগ দিন
+                  </button>
+                )}
                 {apt.status === 'pending' && (
                   <div className="w-full py-3 text-center text-amber-600 bg-amber-50 rounded-xl">
                     অপেক্ষায় আছে, সময় হলে যোগ দিন
+                  </div>
+                )}
+                {apt.status === 'cancelled' && (
+                  <div className="w-full py-3 text-center text-red-600 bg-red-50 rounded-xl">
+                    বাতিল করা হয়েছে
                   </div>
                 )}
               </div>
