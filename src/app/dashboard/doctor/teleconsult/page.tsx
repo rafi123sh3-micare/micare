@@ -316,11 +316,6 @@ export default function DoctorTeleconsult() {
             <li>কল শেষে লাল বাটনে চাপুন</li>
           </ol>
         </div>
-
-        <div className="card bg-gradient-to-r from-purple-500 to-indigo-600 text-white">
-          <h2 className="font-semibold mb-2">Jitsi Meet ব্যবহার করুন</h2>
-          <p className="text-sm opacity-90">নিরাপদ ও বিনামূল্যে ভিডিও কলের জন্য</p>
-        </div>
       </div>
     </DashboardLayout>
   );

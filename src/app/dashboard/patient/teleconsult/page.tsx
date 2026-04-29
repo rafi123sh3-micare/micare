@@ -48,7 +48,7 @@ export default function PatientTeleconsult() {
 
     const { data: teleconsults, error } = await supabase
       .from('appointments')
-      .select('*, doctors(name, specialization)')
+      .select('*, doctors(name, specialization, zoom_link)')
       .eq('patient_id', patientData.id)
       .eq('type', 'teleconsult')
       .eq('date', todayStr)
@@ -66,7 +66,7 @@ export default function PatientTeleconsult() {
       specialty: a.doctors?.specialization || '',
       time: a.time,
       reason: a.reason || '',
-      teleconsult_link: a.teleconsult_link,
+      teleconsult_link: a.teleconsult_link || a.doctors?.zoom_link || '',
       status: a.status,
     }));
 
@@ -182,15 +182,7 @@ export default function PatientTeleconsult() {
                   </div>
                 </div>
 
-                {apt.status === 'confirmed' && apt.teleconsult_link && (
-                  <button
-                    onClick={() => joinCall(apt.teleconsult_link)}
-                    className="w-full btn-primary py-3 flex items-center justify-center gap-2"
-                  >
-                    <Video className="w-5 h-5" /> কলে যোগ দিন
-                  </button>
-                )}
-                {apt.status === 'completed' && apt.teleconsult_link && (
+                {apt.status === 'confirmed' && (
                   <button
                     onClick={() => joinCall(apt.teleconsult_link)}
                     className="w-full btn-primary py-3 flex items-center justify-center gap-2"
@@ -201,11 +193,6 @@ export default function PatientTeleconsult() {
                 {apt.status === 'pending' && (
                   <div className="w-full py-3 text-center text-amber-600 bg-amber-50 rounded-xl">
                     অপেক্ষায় আছে, সময় হলে যোগ দিন
-                  </div>
-                )}
-                {apt.status === 'cancelled' && (
-                  <div className="w-full py-3 text-center text-red-600 bg-red-50 rounded-xl">
-                    বাতিল করা হয়েছে
                   </div>
                 )}
               </div>
