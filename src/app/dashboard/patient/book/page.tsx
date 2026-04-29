@@ -68,6 +68,32 @@ export default function PatientBook() {
     }
   }
 
+  const convertTo24Hour = (time: string): number => {
+    if (!time) return 0;
+    const upperTime = time.toUpperCase();
+    const hasAM = upperTime.includes('AM');
+    const hasPM = upperTime.includes('PM');
+    
+    let hourStr, minuteStr;
+    if (hasAM || hasPM) {
+      const parts = time.replace(/[APap][Mm]/, '').split(':');
+      hourStr = parts[0]?.trim() || '0';
+      minuteStr = (parts[1]?.substring(0, 2) || '0').trim();
+    } else {
+      const parts = time.split(':');
+      hourStr = parts[0] || '0';
+      minuteStr = (parts[1] || '0').substring(0, 2);
+    }
+    
+    let hour = parseInt(hourStr) || 0;
+    const minute = parseInt(minuteStr) || 0;
+    
+    if (hasPM && hour !== 12) hour += 12;
+    if (hasAM && hour === 12) hour = 0;
+    
+    return hour * 60 + minute;
+  };
+
   async function loadDoctorSchedules() {
     if (!selectedDoctor || !selectedDate) return;
 
@@ -80,7 +106,8 @@ export default function PatientBook() {
       .select('*')
       .eq('doctor_id', selectedDoctor.id)
       .eq('date', selectedDate)
-      .in('status', ['active', 'pending']);
+      .in('status', ['active', 'pending', 'confirmed'])
+      .order('start_time');
 
     if (error) {
       console.error('Error loading schedules:', error);
@@ -96,26 +123,16 @@ export default function PatientBook() {
       const currentTimeMinutes = now.getHours() * 60 + now.getMinutes();
       
       const filteredSlots = scheduleData.filter((s: any) => {
-        const slotStartTime = s.start_time?.substring(0, 5);
-        const slotEndTime = s.end_time?.substring(0, 5);
-        
-        if (!slotStartTime || !slotEndTime) {
-          console.log('Slot missing start or end time:', s);
-          return false;
-        }
-        
         if (selectedDate !== todayStr) {
           return true;
         }
         
-        const [startHours, startMinutes] = slotStartTime.split(':').map(Number);
-        const startMinutesTotal = startHours * 60 + startMinutes;
-        
-        return currentTimeMinutes < startMinutesTotal;
+        const endTimeMinutes = convertTo24Hour(s.end_time);
+        return endTimeMinutes > currentTimeMinutes;
       }).map((s: any) => ({
         id: s.id,
-        start: s.start_time?.substring(0, 5),
-        end: s.end_time?.substring(0, 5),
+        start: s.start_time?.substring(0, 5) || s.start_time,
+        end: s.end_time?.substring(0, 5) || s.end_time,
         date: s.date,
         status: s.status,
       }));
