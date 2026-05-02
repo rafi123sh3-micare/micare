@@ -29,6 +29,14 @@ const itemVariants = {
 };
 
 export default function AdminReports() {
+  const getLocalDateString = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const [stats, setStats] = useState<any[]>([]);
   const [doctorStats, setDoctorStats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,140 +53,122 @@ export default function AdminReports() {
   const [addingMoney, setAddingMoney] = useState(false);
   const [dailyAddedMoney, setDailyAddedMoney] = useState(0);
   const [monthlyAddedMoney, setMonthlyAddedMoney] = useState(0);
-  const [cachedApts, setCachedApts] = useState<any[]>([]);
-  const [cachedDoctors, setCachedDoctors] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (cachedApts.length === 0) {
-      loadReports();
-    } else {
-      calculateDoctorStats();
-    }
-  }, [statsViewMode]);
-
-  const getLocalDateString = () => {
+  
+  const [filterDate, setFilterDate] = useState(getLocalDateString());
+  const [filterMonth, setFilterMonth] = useState(() => {
     const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  });
 
-  async function loadReports() {
-    const todayStr = getLocalDateString();
-    const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    const firstDayStr = `${firstDayOfMonth.getFullYear()}-${String(firstDayOfMonth.getMonth() + 1).padStart(2, '0')}-${String(firstDayOfMonth.getDate()).padStart(2, '0')}`;
+  // Cache all data
+  const [allApts, setAllApts] = useState<any[]>([]);
+  const [allDoctors, setAllDoctors] = useState<any[]>([]);
+  const [addedMoneyData, setAddedMoneyData] = useState<any[]>([]);
 
-    const { data: allApts } = await supabase
-      .from('appointments')
-      .select('*, doctors(id, name, consultation_fee), patients(id)')
-      .order('date', { ascending: false });
+  // Load all data once
+  useEffect(() => {
+    loadAllData();
+  }, []);
 
-    const { data: doctors } = await supabase
-      .from('doctors')
-      .select('id, name, consultation_fee')
-      .order('name');
+  // Recalculate when filters or data changes (instant, no DB call)
+  useEffect(() => {
+    if (allApts.length > 0 && allDoctors.length > 0) {
+      calculateStats();
+    }
+  }, [statsViewMode, filterDate, filterMonth, allApts, allDoctors]);
 
-    const { data: addedMoneyData, error: transError } = await supabase
-      .from('transactions')
-      .select('amount, date')
-      .eq('type', 'added');
+  // Auto-update month when date changes
+  useEffect(() => {
+    if (filterDate) {
+      const dateObj = new Date(filterDate);
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      setFilterMonth(`${year}-${month}`);
+    }
+  }, [filterDate]);
+
+  async function loadAllData() {
+    setLoading(true);
     
-    if (transError) {
-      console.log('Transactions table error:', transError);
-    }
+    const [aptsResult, doctorsResult, moneyResult] = await Promise.all([
+      supabase.from('appointments').select('*, doctors(id, name, consultation_fee), patients(id)').order('date', { ascending: false }),
+      supabase.from('doctors').select('id, name, consultation_fee').order('name'),
+      supabase.from('transactions').select('amount, date').eq('type', 'added')
+    ]);
 
-    if (allApts && doctors) {
-      const todayAllConfirmed = allApts.filter((a: any) => a.date === todayStr && (a.status === 'confirmed' || a.status === 'completed'));
-      const todayAppointmentCompleted = allApts.filter((a: any) => a.date === todayStr && a.status === 'completed' && a.type !== 'teleconsult');
-      const todayTeleconsultConfirmed = allApts.filter((a: any) => a.date === todayStr && (a.status === 'confirmed' || a.status === 'completed') && a.type === 'teleconsult');
-      const todayUniquePatients = new Set(todayAllConfirmed.map((a: any) => a.patient_id)).size;
-
-      const monthAllConfirmed = allApts.filter((a: any) => a.date >= firstDayStr && (a.status === 'confirmed' || a.status === 'completed'));
-      const monthAppointmentCompleted = allApts.filter((a: any) => a.date >= firstDayStr && a.status === 'completed' && a.type !== 'teleconsult');
-      const monthTeleconsultConfirmed = allApts.filter((a: any) => a.date >= firstDayStr && (a.status === 'confirmed' || a.status === 'completed') && a.type === 'teleconsult');
-      const monthUniquePatients = new Set(monthAllConfirmed.map((a: any) => a.patient_id)).size;
-      
-      const calculateEarnings = (apts: any[]) => {
-        if (!apts || apts.length === 0) return 0;
-        return apts.reduce((sum: number, apt: any) => {
-          const fee = Number(apt.doctors?.consultation_fee) || 500;
-          return sum + fee;
-        }, 0);
-      };
-
-      const dailyCompletedAmt = calculateEarnings(todayAppointmentCompleted);
-      const dailyTeleconsultAmt = calculateEarnings(todayTeleconsultConfirmed);
-      const dailyTotalAmt = dailyCompletedAmt + dailyTeleconsultAmt;
-
-      const monthlyCompletedAmt = calculateEarnings(monthAppointmentCompleted);
-      const monthlyTeleconsultAmt = calculateEarnings(monthTeleconsultConfirmed);
-      const monthlyTotalAmt = monthlyCompletedAmt + monthlyTeleconsultAmt;
-
-      setDailyEarnings(dailyTotalAmt);
-      setMonthlyEarnings(monthlyTotalAmt);
-      setDailyCompleted(dailyCompletedAmt);
-      setMonthlyCompleted(monthlyCompletedAmt);
-      setDailyTeleconsult(dailyTeleconsultAmt);
-      setMonthlyTeleconsult(monthlyTeleconsultAmt);
-
-      if (addedMoneyData) {
-        const todayAdded = addedMoneyData
-          .filter((t: any) => t.date === todayStr)
-          .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
-        const monthAdded = addedMoneyData
-          .filter((t: any) => t.date >= firstDayStr)
-          .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
-        setDailyAddedMoney(todayAdded);
-        setMonthlyAddedMoney(monthAdded);
-      }
-
-      setStats([
-        { label: 'মোট অ্যাপয়েন্টমেন্ট', value: todayAllConfirmed.length, monthlyValue: monthAllConfirmed.length },
-        { label: 'নিশ্চিতকৃত টেলিকনসাল্ট', value: todayTeleconsultConfirmed.length, monthlyValue: monthTeleconsultConfirmed.length },
-        { label: 'মোট সম্পন্ন', value: todayAppointmentCompleted.length + todayTeleconsultConfirmed.length, monthlyValue: monthAppointmentCompleted.length + monthTeleconsultConfirmed.length },
-        { label: 'মোট রোগী', value: todayUniquePatients, monthlyValue: monthUniquePatients },
-      ]);
-
-      const docStats = doctors.map((doc: any) => {
-        const filteredApts = statsViewMode === 'daily' 
-          ? allApts.filter((a: any) => a.doctor_id === doc.id && a.date === todayStr)
-          : allApts.filter((a: any) => a.doctor_id === doc.id && a.date >= firstDayStr);
-        return {
-          name: doc.name,
-          appointments: filteredApts.length,
-          teleconsult: filteredApts.filter((a: any) => a.type === 'teleconsult' && (a.status === 'confirmed' || a.status === 'completed')).length,
-          completed: filteredApts.filter((a: any) => a.status === 'completed').length,
-        };
-      });
-      setDoctorStats(docStats);
-      setCachedApts(allApts);
-      setCachedDoctors(doctors);
-    }
-
+    if (aptsResult.data) setAllApts(aptsResult.data);
+    if (doctorsResult.data) setAllDoctors(doctorsResult.data);
+    if (moneyResult.data) setAddedMoneyData(moneyResult.data);
+    
     setLoading(false);
   }
 
-  function calculateDoctorStats() {
-    if (cachedApts.length === 0 || cachedDoctors.length === 0) return;
-    
-    const todayStr = getLocalDateString();
-    const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    const firstDayStr = `${firstDayOfMonth.getFullYear()}-${String(firstDayOfMonth.getMonth() + 1).padStart(2, '0')}-${String(firstDayOfMonth.getDate()).padStart(2, '0')}`;
+  function calculateStats() {
+    // Month date range
+    const [year, month] = filterMonth.split('-').map(Number);
+    const firstDay = new Date(year, month - 1, 1);
+    const lastDay = new Date(year, month, 0);
+    const firstDayStr = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDayStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
 
-      const docStats = cachedDoctors.map((doc: any) => {
-        const filteredApts = statsViewMode === 'daily' 
-          ? cachedApts.filter((a: any) => a.doctor_id === doc.id && a.date === todayStr)
-          : cachedApts.filter((a: any) => a.doctor_id === doc.id && a.date >= firstDayStr);
-        return {
-          name: doc.name,
-          appointments: filteredApts.length,
-          teleconsult: filteredApts.filter((a: any) => a.type === 'teleconsult' && (a.status === 'confirmed' || a.status === 'completed')).length,
-          completed: filteredApts.filter((a: any) => a.status === 'completed').length,
-        };
-      });
-      setDoctorStats(docStats);
-    }
+    // Daily stats
+    const todayAll = allApts.filter((a: any) => a.date === filterDate && (a.status === 'confirmed' || a.status === 'completed'));
+    const todayCompleted = allApts.filter((a: any) => a.date === filterDate && a.status === 'completed' && a.type !== 'teleconsult');
+    const todayTele = allApts.filter((a: any) => a.date === filterDate && (a.status === 'confirmed' || a.status === 'completed') && a.type === 'teleconsult');
+    const todayPatients = new Set(todayAll.map((a: any) => a.patient_id)).size;
+
+    // Monthly stats
+    const monthAll = allApts.filter((a: any) => a.date >= firstDayStr && a.date <= lastDayStr && (a.status === 'confirmed' || a.status === 'completed'));
+    const monthCompleted = allApts.filter((a: any) => a.date >= firstDayStr && a.date <= lastDayStr && a.status === 'completed' && a.type !== 'teleconsult');
+    const monthTele = allApts.filter((a: any) => a.date >= firstDayStr && a.date <= lastDayStr && (a.status === 'confirmed' || a.status === 'completed') && a.type === 'teleconsult');
+    const monthPatients = new Set(monthAll.map((a: any) => a.patient_id)).size;
+
+    // Earnings
+    const calcEarnings = (apts: any[]) => apts.reduce((sum: number, a: any) => sum + (Number(a.doctors?.consultation_fee) || 500), 0);
+    
+    const dCompleted = calcEarnings(todayCompleted);
+    const dTele = calcEarnings(todayTele);
+    const dTotal = dCompleted + dTele;
+
+    const mCompleted = calcEarnings(monthCompleted);
+    const mTele = calcEarnings(monthTele);
+    const mTotal = mCompleted + mTele;
+
+    setDailyEarnings(dTotal);
+    setMonthlyEarnings(mTotal);
+    setDailyCompleted(dCompleted);
+    setMonthlyCompleted(mCompleted);
+    setDailyTeleconsult(dTele);
+    setMonthlyTeleconsult(mTele);
+
+    // Added money
+    const dAdded = addedMoneyData.filter((t: any) => t.date === filterDate).reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+    const mAdded = addedMoneyData.filter((t: any) => t.date >= firstDayStr && t.date <= lastDayStr).reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+    setDailyAddedMoney(dAdded);
+    setMonthlyAddedMoney(mAdded);
+
+    // Stats cards
+    setStats([
+      { label: 'মোট অ্যাপয়েন্টমেন্ট', value: todayAll.length, monthlyValue: monthAll.length },
+      { label: 'নিশ্চিতকৃত টেলিকনসাল্ট', value: todayTele.length, monthlyValue: monthTele.length },
+      { label: 'মোট সম্পন্ন', value: todayCompleted.length + todayTele.length, monthlyValue: monthCompleted.length + monthTele.length },
+      { label: 'মোট রোগী', value: todayPatients, monthlyValue: monthPatients },
+    ]);
+
+    // Doctor stats
+    const docStats = allDoctors.map((doc: any) => {
+      const filtered = statsViewMode === 'daily'
+        ? allApts.filter((a: any) => a.doctor_id === doc.id && a.date === filterDate)
+        : allApts.filter((a: any) => a.doctor_id === doc.id && a.date >= firstDayStr && a.date <= lastDayStr);
+      return {
+        name: doc.name,
+        appointments: filtered.length,
+        teleconsult: filtered.filter((a: any) => a.type === 'teleconsult' && (a.status === 'confirmed' || a.status === 'completed')).length,
+        completed: filtered.filter((a: any) => a.status === 'completed').length,
+      };
+    });
+    setDoctorStats(docStats);
+  }
 
   async function handleAddMoney() {
     const amount = Number(addedAmount);
@@ -203,8 +193,9 @@ export default function AdminReports() {
       toast.success('টাকা যোগ হয়েছে');
       setShowAddMoneyModal(false);
       setAddedAmount('');
-      setCachedApts([]);
-      loadReports();
+      // Reload money data
+      const { data } = await supabase.from('transactions').select('amount, date').eq('type', 'added');
+      if (data) setAddedMoneyData(data);
     }
     setAddingMoney(false);
   }
@@ -230,34 +221,60 @@ export default function AdminReports() {
         animate="visible"
         className="space-y-6"
       >
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">রিপোর্ট</h1>
             <p className="text-slate-500">ক্লিনিকের পরিসংখ্যান</p>
           </div>
-          <div className="flex bg-slate-100 rounded-lg p-1">
-            <button
-              onClick={() => {
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Date Filter */}
+            <input
+              type="date"
+              value={filterDate}
+              onChange={(e) => {
+                setFilterDate(e.target.value);
                 setStatsViewMode('daily');
                 setMoneyViewMode('daily');
               }}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                statsViewMode === 'daily' ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500'
-              }`}
-            >
-              আজকের
-            </button>
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            />
+            
             <button
               onClick={() => {
-                setStatsViewMode('monthly');
-                setMoneyViewMode('monthly');
+                const today = getLocalDateString();
+                setFilterDate(today);
+                setStatsViewMode('daily');
+                setMoneyViewMode('daily');
               }}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                statsViewMode === 'monthly' ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500'
-              }`}
+              className="px-4 py-2 text-white rounded-lg bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-600 transition shadow-md text-sm font-medium"
             >
-              মাসিক
+              Today
             </button>
+            
+            <div className="flex bg-slate-100 rounded-lg p-1">
+              <button
+                onClick={() => {
+                  setStatsViewMode('daily');
+                  setMoneyViewMode('daily');
+                }}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  statsViewMode === 'daily' ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500'
+                }`}
+              >
+                আজকের
+              </button>
+              <button
+                onClick={() => {
+                  setStatsViewMode('monthly');
+                  setMoneyViewMode('monthly');
+                }}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  statsViewMode === 'monthly' ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500'
+                }`}
+              >
+                মাসিক
+              </button>
+            </div>
           </div>
         </div>
 

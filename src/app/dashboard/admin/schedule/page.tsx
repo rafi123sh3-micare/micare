@@ -289,19 +289,19 @@ export default function AdminSchedule() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-3 items-center">
-              
-              <DatePicker
-                value={filterDate}
-                onChange={setFilterDate}
-                className="!w-[160px]"
-              />
-              
-              <select
-                value={filterDoctor}
-                onChange={(e) => setFilterDoctor(e.target.value)}
-                className="px-3 py-2 border border-slate-300 rounded-lg"
-              >
+              <div className="flex flex-wrap gap-3 items-center">
+               
+               <DatePicker
+                 value={filterDate}
+                 onChange={setFilterDate}
+                 className="!w-[160px]"
+               />
+               
+               <select
+                 value={filterDoctor}
+                 onChange={(e) => setFilterDoctor(e.target.value)}
+                 className="px-3 py-2 border border-slate-300 rounded-lg"
+               >
                 <option value="">সব ডাক্তার</option>
                 {doctors.map((d) => (
                   <option key={d.id} value={d.id}>
@@ -467,7 +467,32 @@ export default function AdminSchedule() {
               </div>
             </div>
             
-            <label className="flex items-start gap-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200 cursor-pointer hover:from-purple-100 hover:to-indigo-100 transition">
+            <div className="mt-3">
+              <p className="text-sm font-medium text-slate-600 mb-2">দিন নির্বাচন করুন *</p>
+              <div className="flex flex-wrap gap-2">
+                {days.map((day) => (
+                  <button
+                    key={day.index}
+                    type="button"
+                    onClick={() => {
+                      const selected = newShift.selected_days.includes(day.index)
+                        ? newShift.selected_days.filter(d => d !== day.index)
+                        : [...newShift.selected_days, day.index];
+                      setNewShift({ ...newShift, selected_days: selected });
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                      newShift.selected_days.includes(day.index)
+                        ? 'bg-purple-500 text-white shadow-md'
+                        : 'bg-white text-slate-600 border border-purple-200 hover:bg-purple-50'
+                    }`}
+                  >
+                    {day.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label className="flex items-start gap-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200 cursor-pointer hover:from-purple-100 hover:to-indigo-100 transition mt-3">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="relative">
@@ -475,7 +500,7 @@ export default function AdminSchedule() {
                       type="checkbox"
                       checked={newShift.repeat_weekly}
                       onChange={(e) =>
-                        setNewShift({ ...newShift, repeat_weekly: e.target.checked, selected_days: e.target.checked ? newShift.selected_days : [] })
+                        setNewShift({ ...newShift, repeat_weekly: e.target.checked })
                       }
                       className="w-6 h-6 rounded-lg border-2 border-purple-300 text-purple-600 focus:ring-purple-500 focus:ring-offset-2 cursor-pointer"
                       style={{ accentColor: '#9333ea' }}
@@ -492,33 +517,6 @@ export default function AdminSchedule() {
                 )}
               </div>
             </label>
-            
-            {newShift.repeat_weekly && (
-              <div className="mt-3">
-                <p className="text-xs text-purple-600 mb-2">দিন নির্বাচন করুন:</p>
-                <div className="flex flex-wrap gap-2">
-                  {days.map((day) => (
-                    <button
-                      key={day.index}
-                      type="button"
-                      onClick={() => {
-                        const selected = newShift.selected_days.includes(day.index)
-                          ? newShift.selected_days.filter(d => d !== day.index)
-                          : [...newShift.selected_days, day.index];
-                        setNewShift({ ...newShift, selected_days: selected });
-                      }}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                        newShift.selected_days.includes(day.index)
-                          ? 'bg-purple-500 text-white shadow-md'
-                          : 'bg-white text-slate-600 border border-purple-200 hover:bg-purple-50'
-                      }`}
-                    >
-                      {day.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             <Button onClick={handleAddShift} className="w-full">
               শিফট যোগ করুন
