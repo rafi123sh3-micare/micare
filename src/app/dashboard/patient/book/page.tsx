@@ -101,12 +101,14 @@ export default function PatientBook() {
 
     console.log('Loading schedules for doctor:', selectedDoctor.id, 'date:', selectedDate);
 
+    // Use the rule-based system: get schedules that are active on this date
     const { data: scheduleData, error } = await supabase
       .from('schedules')
       .select('*')
       .eq('doctor_id', selectedDoctor.id)
-      .eq('date', selectedDate)
-      .in('status', ['active', 'pending', 'confirmed'])
+      .lte('start_date', selectedDate) // start_date <= selectedDate
+      .or(`end_date.is.null,end_date.gte.${selectedDate}`) // end_date >= selectedDate OR end_date is null
+      .eq('status', 'active') // Only show active schedules
       .order('start_time');
 
     if (error) {
@@ -118,25 +120,44 @@ export default function PatientBook() {
     console.log('Schedule query result:', { doctorId: selectedDoctor.id, date: selectedDate, data: scheduleData, count: scheduleData?.length });
 
     if (scheduleData && scheduleData.length > 0) {
+      // Filter by weekday
+      const dayMapping: { [key: number]: string } = {
+        0: 'রবিবার',
+        1: 'সোমবার',
+        2: 'মঙ্গলবার',
+        3: 'বুধবার',
+        4: 'বৃহস্পতিবার',
+        5: 'শুক্রবার',
+        6: 'শনিবার',
+      };
+
+      const selectedDateObj = new Date(selectedDate);
+      const dayOfWeek = selectedDateObj.getDay();
+      const dayName = dayMapping[dayOfWeek];
+
+      const matchingSchedules = scheduleData.filter((s: any) => 
+        s.selected_days?.includes(dayName)
+      );
+
       const now = new Date();
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       const currentTimeMinutes = now.getHours() * 60 + now.getMinutes();
-      
-      const filteredSlots = scheduleData.filter((s: any) => {
-        if (selectedDate !== todayStr) {
-          return true;
-        }
-        
-        const endTimeMinutes = convertTo24Hour(s.end_time);
-        return endTimeMinutes > currentTimeMinutes;
-      }).map((s: any) => ({
+
+      const filteredSlots = matchingSchedules.map((s: any) => ({
         id: s.id,
         start: s.start_time?.substring(0, 5) || s.start_time,
         end: s.end_time?.substring(0, 5) || s.end_time,
-        date: s.date,
+        date: selectedDate,
         status: s.status,
-      }));
-      
+      })).filter((slot: any) => {
+        if (selectedDate !== todayStr) {
+          return true;
+        }
+
+        const endTimeMinutes = convertTo24Hour(slot.end);
+        return endTimeMinutes > currentTimeMinutes;
+      });
+
       setAvailableSlots(filteredSlots);
     } else {
       console.log('No schedules found for this date');

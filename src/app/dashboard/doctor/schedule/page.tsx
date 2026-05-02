@@ -55,22 +55,28 @@ export default function DoctorSchedule() {
       return;
     }
 
-    const { data: activeData } = await supabase
+    // Fetch ALL active and pending schedules for this doctor (no date filter)
+    const { data: allSchedules } = await supabase
       .from('schedules')
       .select('*')
       .eq('doctor_id', doctorData.id)
-      .eq('status', 'active')
-      .order('date', { ascending: true });
+      .or('status.eq.active,status.eq.pending')
+      .order('start_date', { ascending: true });
 
-    const { data: pendingData } = await supabase
-      .from('schedules')
-      .select('*')
-      .eq('doctor_id', doctorData.id)
-      .eq('status', 'pending')
-      .order('date', { ascending: true });
+    if (allSchedules) {
+      // For pending schedules - show all
+      const pendingSchedulesList = allSchedules.filter(s => 
+        s.status === 'pending'
+      );
 
-    if (activeData) setSchedules(activeData);
-    if (pendingData) setPendingSchedules(pendingData);
+      // For active schedules - show all (weekly routine will filter by day)
+      const activeSchedules = allSchedules.filter(s => 
+        s.status === 'active'
+      );
+
+      setSchedules(activeSchedules);
+      setPendingSchedules(pendingSchedulesList);
+    }
 
     setLoading(false);
   }
@@ -102,10 +108,9 @@ export default function DoctorSchedule() {
   const activeSchedules = schedules.filter(s => s.status === 'active');
 
   const weeklySchedule = days.map(day => {
-    const daySchedules = activeSchedules.filter(s => {
-      const scheduleDay = new Date(s.date).getDay();
-      return scheduleDay === day.index;
-    });
+    const daySchedules = activeSchedules.filter(s => 
+      s.selected_days?.includes(day.name)
+    );
 
     return {
       day: day.name,
@@ -116,7 +121,11 @@ export default function DoctorSchedule() {
   });
 
   const todayStr = getLocalDateString();
-  const todaysShift = activeSchedules.find(s => s.date === todayStr);
+  const todayDateObj = new Date(todayStr);
+  const todayDayName = days[todayDateObj.getDay()]?.name || '';
+  const todaysShift = activeSchedules.find(s => 
+    s.selected_days?.includes(todayDayName)
+  );
 
   if (loading) {
     return (
@@ -156,38 +165,39 @@ export default function DoctorSchedule() {
           <div className="card bg-amber-50 border-2 border-amber-200">
             <h2 className="font-semibold text-amber-800 mb-4">অপেক্ষায় শিফট ({pendingSchedules.length})</h2>
             <div className="space-y-3">
-              {pendingSchedules.map((schedule) => {
-                const dayIndex = new Date(schedule.date).getDay();
-                const dayName = days[dayIndex]?.name || '';
-                return (
-                  <div key={schedule.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-amber-200">
-                    <div>
-                      <p className="font-medium text-gray-900">{dayName}</p>
-                      <p className="text-sm text-gray-500">{formatTime(schedule.start_time)} - {formatTime(schedule.end_time)}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => confirmSchedule(schedule.id)}
-                        className="px-3 py-1.5 bg-emerald-500 text-white text-sm rounded-lg hover:bg-emerald-600 flex items-center gap-1"
-                      >
-                        <Check className="w-4 h-4" /> নিশ্চিত
-                      </button>
-                      <button
-                        onClick={() => rejectSchedule(schedule.id)}
-                        className="px-3 py-1.5 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 flex items-center gap-1"
-                      >
-                        <X className="w-4 h-4" /> বাতিল
-                      </button>
-                    </div>
+              {pendingSchedules.map((schedule) => (
+                <div key={schedule.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-amber-200">
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      {schedule.selected_days?.[0] || 'সব দিন'}
+                    </p>
+                    <p className="text-sm text-gray-500">{formatTime(schedule.start_time)} - {formatTime(schedule.end_time)}</p>
+                    <p className="text-xs text-gray-400">
+                      {schedule.start_date} {schedule.end_date ? ` - ${schedule.end_date}` : '(চলমান)'}
+                    </p>
                   </div>
-                );
-              })}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => confirmSchedule(schedule.id)}
+                      className="px-3 py-1.5 bg-emerald-500 text-white text-sm rounded-lg hover:bg-emerald-600 flex items-center gap-1"
+                    >
+                      <Check className="w-4 h-4" /> নিশ্চিত
+                    </button>
+                    <button
+                      onClick={() => rejectSchedule(schedule.id)}
+                      className="px-3 py-1.5 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 flex items-center gap-1"
+                    >
+                      <X className="w-4 h-4" /> বাতিল
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
         <div className="card">
-          <h2 className="font-semibold text-gray-900 mb-4">সাপ্তাহিক রুটিন</h2>
+            <h2 className="font-semibold text-gray-900 mb-4">সাপ্তাহিক রুটিন</h2>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>

@@ -31,14 +31,14 @@ const formatDate = (dateStr: string) =>
   });
 
 const getLocalDateString = () => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
-  const todayISO = getLocalDateString();
+const todayISO = getLocalDateString();
 
 export default function AdminSchedule() {
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -50,7 +50,7 @@ export default function AdminSchedule() {
   const [filterDate, setFilterDate] = useState(todayISO);
   const [filterDoctor, setFilterDoctor] = useState('');
   const [filterSpecialization, setFilterSpecialization] = useState('');
-
+  
   const [newShift, setNewShift] = useState({
     date: todayISO,
     doctor_id: '',
@@ -78,7 +78,7 @@ export default function AdminSchedule() {
     const { data: schedulesData } = await supabase
       .from('schedules')
       .select('*, doctors(name, specialization)')
-      .order('date', { ascending: true });
+      .order('start_date', { ascending: true });
 
     const { data: doctorsData } = await supabase
       .from('doctors')
@@ -87,7 +87,6 @@ export default function AdminSchedule() {
 
     setSchedules(schedulesData || []);
     setDoctors(doctorsData || []);
-
     setLoading(false);
   }
 
@@ -95,18 +94,47 @@ export default function AdminSchedule() {
     ...new Set(doctors.map((d) => d.specialization).filter(Boolean)),
   ] as string[];
 
-const filteredSchedules = schedules.filter((s) => {
-    if (filterDate && s.date !== filterDate) return false;
+  const dayMapping: { [key: number]: string } = {
+    0: 'রবিবার',
+    1: 'সোমবার',
+    2: 'মঙ্গলবার',
+    3: 'বুধবার',
+    4: 'বৃহস্পতিবার',
+    5: 'শুক্রবার',
+    6: 'শনিবার',
+  };
+
+  const filteredSchedules = schedules.filter((s: any) => {
     if (filterDoctor && s.doctor_id !== filterDoctor) return false;
+    
     if (
       filterSpecialization &&
       s.doctors?.specialization !== filterSpecialization
-    )
-      return false;
+    ) return false;
+    
+    if (filterDate) {
+      const startDate = s.start_date;
+      const endDate = s.end_date;
+      
+      if (!startDate) return false;
+      
+      // Check if filterDate is within the date range
+      if (endDate) {
+        if (filterDate < startDate || filterDate > endDate) return false;
+      } else {
+        if (filterDate < startDate) return false;
+      }
+      
+      // Check if the weekday of filterDate is in selected_days
+      const filterDateObj = new Date(filterDate);
+      const dayOfWeek = filterDateObj.getDay();
+      const dayName = dayMapping[dayOfWeek];
+      
+      if (s.selected_days && !s.selected_days.includes(dayName)) return false;
+    }
+    
     return true;
   });
-
-  let finalSchedules = filteredSchedules;
 
   const formatTime = (t: string) => {
     if (!t) return '';
@@ -118,106 +146,63 @@ const filteredSchedules = schedules.filter((s) => {
   };
 
   const handleAddShift = async () => {
-    if (
-      !newShift.doctor_id
-    ) {
+    if (!newShift.doctor_id) {
       toast.error('সব তথ্য পূরণ করুন');
+      return;
+    }
+
+    if (newShift.selected_days.length === 0) {
+      toast.error('দিন নির্বাচন করুন');
       return;
     }
 
     const startTime = newShift.start_time || '09:00';
     const endTime = newShift.end_time || '09:00';
 
-    if (newShift.repeat_weekly && newShift.selected_days.length === 0) {
-      toast.error('দিন নির্বাচন করুন');
-      return;
-    }
-
-    const { data: doctor } = await supabase
-      .from('doctors')
-      .select('name')
-      .eq('id', newShift.doctor_id)
-      .single();
+    const dayNames = newShift.selected_days.map((dayIndex: number) => {
+      const day = days.find(d => d.index === dayIndex);
+      return day ? day.name : '';
+    }).filter(Boolean);
 
     try {
-      if (newShift.repeat_weekly) {
-        const schedulesToInsert: any[] = [];
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        for (const dayOfWeek of newShift.selected_days) {
-          const scheduleDate = new Date(newShift.date);
-          const dayDiff = dayOfWeek - scheduleDate.getDay();
-          scheduleDate.setDate(scheduleDate.getDate() + dayDiff);
-          
-          if (scheduleDate < today) {
-            scheduleDate.setDate(scheduleDate.getDate() + 7);
-          }
-          
-          const dateStr = `${scheduleDate.getFullYear()}-${String(scheduleDate.getMonth() + 1).padStart(2, '0')}-${String(scheduleDate.getDate()).padStart(2, '0')}`;
-          
-          if (dateStr >= todayISO) {
-            schedulesToInsert.push({
-              doctor_id: newShift.doctor_id,
-              date: dateStr,
-              start_time: startTime,
-              end_time: endTime,
-              status: 'pending',
-              is_repeating: true,
-            });
-          }
-        }
+      // Create separate row for each selected day
+      const scheduleInserts = dayNames.map((dayName: string) => ({
+        doctor_id: newShift.doctor_id,
+        start_time: startTime,
+        end_time: endTime,
+        selected_days: [dayName], // One day per row
+        repeat_weekly: newShift.repeat_weekly,
+        start_date: newShift.date,
+        status: 'pending',
+      }));
 
-        const { error } = await supabase.from('schedules').insert(schedulesToInsert);
-        
-        if (error) {
-          toast.error('শিফট যোগ করতে ব্যর্থ: ' + error.message);
-        } else {
-          requestPushPermission();
-          
-          for (const schedule of schedulesToInsert) {
-            const dayName = days[new Date(schedule.date).getDay()]?.name || '';
-            try {
-              await sendNotification('schedule_pending_doctor', {
-                doctorId: newShift.doctor_id,
-              }, {
-                doctorName: doctor?.name,
-                date: dayName,
-                startTime: startTime,
-                endTime: endTime,
-              });
-            } catch (e) {}
-          }
-          
-          toast.success(`${schedulesToInsert.length}টি শিফট যোগ হয়েছে! (${schedulesToInsert.map(s => days[new Date(s.date).getDay()]?.name).join(', ')})`);
-        }
+      const { error } = await supabase.from('schedules').insert(scheduleInserts);
+
+      if (error) {
+        toast.error('শিফট যোগ করতে ব্যর্থ: ' + error.message);
       } else {
-        const { error } = await supabase.from('schedules').insert({
-          doctor_id: newShift.doctor_id,
-          date: newShift.date,
-          start_time: startTime,
-          end_time: endTime,
-          status: 'pending',
-        });
+        requestPushPermission();
+        
+        const { data: doctor } = await supabase
+          .from('doctors')
+          .select('name')
+          .eq('id', newShift.doctor_id)
+          .single();
 
-        if (error) {
-          toast.error('শিফট যোগ করতে ব্যর্থ: ' + error.message);
-        } else {
-          requestPushPermission();
-          
-          try {
-            await sendNotification('schedule_pending_doctor', {
-              doctorId: newShift.doctor_id,
-            }, {
-              doctorName: doctor?.name,
-              date: newShift.date,
-              startTime: startTime,
-              endTime: endTime,
-            });
-          } catch (e) {}
-          
-          toast.success('শিফট যোগ হয়েছে! (অপেক্ষায়)');
-        }
+        try {
+          await sendNotification('schedule_pending_doctor', {
+            doctorId: newShift.doctor_id,
+          }, {
+            doctorName: doctor?.name,
+            date: newShift.date,
+            startTime: startTime,
+            endTime: endTime,
+            days: dayNames.join(', '),
+          });
+        } catch (e) {}
+
+        const scheduleType = newShift.repeat_weekly ? 'প্রতি সপ্তাহের জন্য' : 'এই সপ্তাহের জন্য';
+        toast.success(`${dayNames.length}টি শিফট যোগ হয়েছে! (${scheduleType})`);
       }
 
       setShowModal(false);
@@ -236,23 +221,20 @@ const filteredSchedules = schedules.filter((s) => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('এই শিফট মুছতে চান?')) return;
-
+    if (!confirm('এই শিফট মুছে ফেলবেন?')) return;
+    
     const { error } = await supabase
       .from('schedules')
       .delete()
       .eq('id', id);
-
+    
     if (!error) {
       const { data: updatedSchedules } = await supabase
         .from('schedules')
         .select('*, doctors(name, specialization)')
-        .order('date', { ascending: true });
+        .order('start_date', { ascending: true });
       
       setSchedules(updatedSchedules || []);
-      
-      localStorage.setItem('admin_schedules_refresh', Date.now().toString());
-      
       toast.success('শিফট মুছে ফেলা হয়েছে');
     }
   };
@@ -270,7 +252,7 @@ const filteredSchedules = schedules.filter((s) => {
   return (
     <DashboardLayout role="admin">
       <div className="space-y-6">
-
+        
         {/* HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -293,12 +275,12 @@ const filteredSchedules = schedules.filter((s) => {
         {/* FILTER BAR */}
         <Card className="p-4 bg-white border border-slate-200 shadow-sm">
           <div className="flex flex-col md:flex-row md:items-center gap-4 justify-between">
-
+            
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-slate-100">
                 <Calendar className="w-5 h-5 text-slate-600" />
               </div>
-
+              
               <div>
                 <p className="text-xs text-slate-500">নির্বাচিত তারিখ</p>
                 <p className="font-semibold text-slate-900">
@@ -308,13 +290,13 @@ const filteredSchedules = schedules.filter((s) => {
             </div>
 
             <div className="flex flex-wrap gap-3 items-center">
-
+              
               <DatePicker
                 value={filterDate}
                 onChange={setFilterDate}
                 className="!w-[160px]"
               />
-
+              
               <select
                 value={filterDoctor}
                 onChange={(e) => setFilterDoctor(e.target.value)}
@@ -327,7 +309,7 @@ const filteredSchedules = schedules.filter((s) => {
                   </option>
                 ))}
               </select>
-
+              
               <select
                 value={filterSpecialization}
                 onChange={(e) => setFilterSpecialization(e.target.value)}
@@ -340,15 +322,14 @@ const filteredSchedules = schedules.filter((s) => {
                   </option>
                 ))}
               </select>
-
-              {/* 🔥 UPDATED TODAY BUTTON */}
+              
               <button
                 onClick={() => setFilterDate(todayISO)}
                 className="px-4 py-2 text-white rounded-lg bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-600 transition shadow-md"
               >
                 Today
               </button>
-
+              
             </div>
           </div>
         </Card>
@@ -370,18 +351,31 @@ const filteredSchedules = schedules.filter((s) => {
               </thead>
 
               <tbody>
-                {finalSchedules.length === 0 ? (
+                {filteredSchedules.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-10 text-center text-slate-500">
                       কোনো শিফট নেই
                     </td>
                   </tr>
                 ) : (
-                  finalSchedules.map((s: any) => (
+                  filteredSchedules.map((s: any) => (
                     <tr key={s.id} className="border-b hover:bg-slate-50">
-                      <td className="px-4 py-3">{formatDate(s.date)}</td>
                       <td className="px-4 py-3">
-                        {days[new Date(s.date).getDay()]?.name}
+                        {filterDate ? (
+                          <span className="font-medium text-primary-600">{formatDate(filterDate)}</span>
+                        ) : (
+                          <>
+                            {s.start_date ? formatDate(s.start_date) : '-'}
+                            {s.end_date && ` - ${formatDate(s.end_date)}`}
+                          </>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {s.selected_days?.map((day: string) => (
+                          <span key={day} className="inline-block px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs mr-1 mb-1">
+                            {day}
+                          </span>
+                        )) || '-'}
                       </td>
                       <td className="px-4 py-3">{s.doctors?.name}</td>
                       <td className="px-4 py-3">
@@ -393,6 +387,9 @@ const filteredSchedules = schedules.filter((s) => {
                       </td>
                       <td className="px-4 py-3">
                         <StatusPill status={s.status} />
+                        {s.repeat_weekly && (
+                          <span className="ml-2 text-xs text-purple-600">(পুনরাবৃত্তি)</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
@@ -429,13 +426,13 @@ const filteredSchedules = schedules.filter((s) => {
           title="নতুন শিফট"
         >
           <div className="space-y-5">
-
+            
             <DatePicker
               value={newShift.date}
               onChange={(date) => setNewShift({ ...newShift, date })}
               className="!w-full"
             />
-
+            
             <select
               value={newShift.doctor_id}
               onChange={(e) =>
@@ -450,7 +447,7 @@ const filteredSchedules = schedules.filter((s) => {
                 </option>
               ))}
             </select>
-
+            
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-sm font-medium text-slate-600 mb-2 block">শুরুর সময়</label>
@@ -469,7 +466,7 @@ const filteredSchedules = schedules.filter((s) => {
                 />
               </div>
             </div>
-
+            
             <label className="flex items-start gap-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200 cursor-pointer hover:from-purple-100 hover:to-indigo-100 transition">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
@@ -483,11 +480,6 @@ const filteredSchedules = schedules.filter((s) => {
                       className="w-6 h-6 rounded-lg border-2 border-purple-300 text-purple-600 focus:ring-purple-500 focus:ring-offset-2 cursor-pointer"
                       style={{ accentColor: '#9333ea' }}
                     />
-                    {newShift.repeat_weekly && (
-                      <svg className="absolute top-0.5 left-0.5 w-5 h-5 text-white pointer-events-none" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    )}
                   </div>
                   <span className="text-base font-semibold text-purple-800">
                     সাপ্তাহিক পুনরাবৃত্তি
@@ -495,32 +487,38 @@ const filteredSchedules = schedules.filter((s) => {
                 </div>
                 {newShift.repeat_weekly && (
                   <div className="mt-3">
-                    <p className="text-xs text-purple-600 mb-2">দিন নির্বাচন করুন:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {days.map((day) => (
-                        <button
-                          key={day.index}
-                          type="button"
-                          onClick={() => {
-                            const selected = newShift.selected_days.includes(day.index)
-                              ? newShift.selected_days.filter(d => d !== day.index)
-                              : [...newShift.selected_days, day.index];
-                            setNewShift({ ...newShift, selected_days: selected });
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                            newShift.selected_days.includes(day.index)
-                              ? 'bg-purple-500 text-white shadow-md'
-                              : 'bg-white text-slate-600 border border-purple-200 hover:bg-purple-50'
-                          }`}
-                        >
-                          {day.name}
-                        </button>
-                      ))}
-                    </div>
+                    <p className="text-xs text-purple-600 mb-2">প্রতি সপ্তাহে এই দিনগুলোতে শিফট সক্রিয় থাকবে</p>
                   </div>
                 )}
               </div>
             </label>
+            
+            {newShift.repeat_weekly && (
+              <div className="mt-3">
+                <p className="text-xs text-purple-600 mb-2">দিন নির্বাচন করুন:</p>
+                <div className="flex flex-wrap gap-2">
+                  {days.map((day) => (
+                    <button
+                      key={day.index}
+                      type="button"
+                      onClick={() => {
+                        const selected = newShift.selected_days.includes(day.index)
+                          ? newShift.selected_days.filter(d => d !== day.index)
+                          : [...newShift.selected_days, day.index];
+                        setNewShift({ ...newShift, selected_days: selected });
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                        newShift.selected_days.includes(day.index)
+                          ? 'bg-purple-500 text-white shadow-md'
+                          : 'bg-white text-slate-600 border border-purple-200 hover:bg-purple-50'
+                      }`}
+                    >
+                      {day.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <Button onClick={handleAddShift} className="w-full">
               শিফট যোগ করুন
@@ -548,16 +546,21 @@ const filteredSchedules = schedules.filter((s) => {
                 <p className="text-sm font-medium text-slate-600 mb-2">দিন নির্বাচন করুন (যেদিন চেঞ্জ করবেন)</p>
                 <div className="flex flex-wrap gap-2">
                   {days.map((day) => {
-                    const dayIndex = editingSchedule.date ? new Date(editingSchedule.date).getDay() : null;
-                    const isCurrentDay = dayIndex === day.index;
+                    const isSelected = editingSchedule.selected_days?.includes(day.name);
                     return (
                       <button
                         key={day.index}
                         type="button"
-                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                          isCurrentDay
-                            ? 'bg-blue-500 text-white shadow-md'
-                            : 'bg-slate-100 text-slate-600 border border-slate-200'
+                        onClick={() => {
+                          const selected = isSelected
+                            ? editingSchedule.selected_days.filter((d: string) => d !== day.name)
+                            : [...(editingSchedule.selected_days || []), day.name];
+                          setEditingSchedule({ ...editingSchedule, selected_days: selected });
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                          isSelected
+                            ? 'bg-purple-500 text-white shadow-md'
+                            : 'bg-white text-slate-600 border border-purple-200 hover:bg-purple-50'
                         }`}
                       >
                         {day.name}
@@ -595,12 +598,13 @@ const filteredSchedules = schedules.filter((s) => {
                     .update({
                       start_time: editingSchedule.start_time,
                       end_time: editingSchedule.end_time,
+                      selected_days: editingSchedule.selected_days,
                       status: 'pending',
                     })
                     .eq('id', editingSchedule.id);
 
                   if (error) {
-                    toast.error('আপডেট করতে সমস্যা হয়েছে');
+                    toast.error('আপডেট করতে সমস্যা হয়েছে: ' + error.message);
                   } else {
                     toast.success('শিফট আপডেট হয়েছে');
                     setShowEditModal(false);

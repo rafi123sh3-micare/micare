@@ -104,15 +104,34 @@ export default function AdminAppointments() {
       .from('schedules')
       .select('*')
       .eq('doctor_id', walkinPatient.doctor_id)
-      .eq('date', walkinPatient.date)
-      .in('status', ['active', 'confirmed'])
+      .lte('start_date', walkinPatient.date) // start_date <= date
+      .or(`end_date.is.null,end_date.gte.${walkinPatient.date}`) // end_date >= date OR end_date is null
       .order('start_time');
 
     if (data && data.length > 0) {
-      setSchedules(data);
+      // Filter by weekday
+      const dayMapping: { [key: number]: string } = {
+        0: 'রবিবার',
+        1: 'সোমবার',
+        2: 'মঙ্গলবার',
+        3: 'বুধবার',
+        4: 'বৃহস্পতিবার',
+        5: 'শুক্রবার',
+        6: 'শনিবার',
+      };
+
+      const selectedDateObj = new Date(walkinPatient.date);
+      const dayOfWeek = selectedDateObj.getDay();
+      const dayName = dayMapping[dayOfWeek];
+
+      const matchingSchedules = data.filter((s: any) => 
+        s.selected_days?.includes(dayName)
+      );
+
+      setSchedules(matchingSchedules);
       const ranges: string[] = [];
-      data.forEach((schedule: any) => {
-        ranges.push(`${schedule.start_time.substring(0, 5)} - ${schedule.end_time.substring(0, 5)}`);
+      matchingSchedules.forEach((schedule: any) => {
+        ranges.push(`${schedule.start_time?.substring(0, 5)} - ${schedule.end_time?.substring(0, 5)}`);
       });
       setAvailableSlots(ranges);
     } else {
