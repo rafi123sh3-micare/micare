@@ -20,6 +20,7 @@ import { NotificationBell } from './NotificationBell';
 // import { Footer } from './Footer';
 import { useLoading } from '@/context/LoadingContext';
 import { Skeleton, ContentSkeleton } from './ui/Skeleton';
+import toast from 'react-hot-toast';
 
 type NavItem = {
   href: string;
@@ -73,6 +74,19 @@ export default function DashboardLayout({
   useEffect(() => {
     stopLoading();
   }, [pathname, stopLoading]);
+
+  useEffect(() => {
+    const userRole = localStorage.getItem('userRole');
+    const hasData = 
+      (role === 'admin' && localStorage.getItem('adminData')) ||
+      (role === 'doctor' && localStorage.getItem('doctorData')) ||
+      (role === 'patient' && localStorage.getItem('patientData'));
+    
+    if (!userRole || !hasData) {
+      toast.error('লগইন করুন');
+      router.push('/login');
+    }
+  }, [role, router]);
 
   const handleNavClick = useCallback((href: string) => {
     startLoading();
