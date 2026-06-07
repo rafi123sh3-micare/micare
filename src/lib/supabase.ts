@@ -9,6 +9,13 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+const supabaseUrl1 = process.env.NEXT_PUBLIC_SUPABASE_URL1;
+const supabaseAnonKey1 = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY1;
+
+export const supabase1 = supabaseUrl1 && supabaseAnonKey1 
+  ? createClient(supabaseUrl1, supabaseAnonKey1)
+  : supabase;
+
 export async function generateSerialNumber(doctorId: string, date: string, type: 'appointment' | 'teleconsult'): Promise<string> {
   console.log('generateSerialNumber called:', { doctorId, date, type });
   

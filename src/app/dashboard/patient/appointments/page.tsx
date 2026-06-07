@@ -2,15 +2,19 @@
 
 import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Calendar, Clock, Video, X, ChevronRight, FileText, Search } from 'lucide-react';
+import { Calendar, Clock, Video, X, ChevronRight, FileText, Search, Printer } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Card } from '@/components/ui/Card';
 import { StatusPill } from '@/components/ui/StatusPill';
+import { QRCode } from '@/components/ui/QRCode';
 import { Modal } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/Button';
 import DatePicker from '@/components/ui/DatePicker';
+import { useSearchParams } from 'next/navigation';
 
 export default function PatientAppointments() {
+  const searchParams = useSearchParams();
   const [filter, setFilter] = useState('all');
   const [filterDoctor, setFilterDoctor] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -21,6 +25,7 @@ export default function PatientAppointments() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showQRModal, setShowQRModal] = useState(false);
 
   const getStatusFromDate = (dateStr: string, currentStatus: string) => {
     if (currentStatus === 'cancelled') return 'cancelled';
@@ -111,6 +116,16 @@ const statusOrder: Record<string, number> = {
     loadAppointments();
     loadDoctors();
   }, []);
+
+  useEffect(() => {
+    const appointmentId = searchParams.get('id');
+    if (appointmentId && appointments.length > 0) {
+      const apt = appointments.find(a => a.id === appointmentId);
+      if (apt) {
+        setSelectedApt(apt);
+      }
+    }
+  }, [searchParams, appointments]);
 
   const filteredApts = appointments.filter(apt => {
     if (filter !== 'all' && apt.displayStatus !== filter) return false;
@@ -366,14 +381,83 @@ const statusOrder: Record<string, number> = {
                 </div>
               )}
 
-              <div className="flex items-center justify-between pt-2">
-                <p className="text-sm text-slate-500">স্ট্যাটাস</p>
-                <StatusPill status={selectedApt.displayStatus as any} />
-              </div>
-            </div>
-          )}
-        </Modal>
-      </div>
-    </DashboardLayout>
+<div className="flex items-center justify-between pt-2">
+                 <p className="text-sm text-slate-500">স্ট্যাটাস</p>
+                 <StatusPill status={selectedApt.displayStatus as any} />
+               </div>
+
+               <div className="pt-4 border-t">
+                 <Button
+                   onClick={() => setShowQRModal(true)}
+                   className="w-full"
+                 >
+                   <Printer className="w-4 h-4 mr-2" /> QR কোড দেখুন ও প্রিন্ট করুন
+                 </Button>
+               </div>
+             </div>
+           )}
+         </Modal>
+
+         {/* QR CODE MODAL */}
+         <Modal
+           isOpen={showQRModal}
+           onClose={() => setShowQRModal(false)}
+           title="অ্যাপয়েন্টমেন্ট QR কোড"
+           size="sm"
+         >
+           {selectedApt && (
+             <div className="space-y-4 text-center">
+               <div className="flex justify-center">
+                 <QRCode value={`${window.location.origin}/dashboard/patient/appointments?id=${selectedApt.id}`} size={200} />
+               </div>
+               <div className="space-y-2">
+                 <p className="font-semibold">{selectedApt.doctor}</p>
+                 <p className="text-sm text-slate-500">{formatDate(selectedApt.date)} - {selectedApt.time_range}</p>
+               </div>
+               <Button
+                 onClick={() => {
+                   const printWindow = window.open('', '_blank');
+                   if (printWindow) {
+                     printWindow.document.write(`
+                       <html>
+                         <head>
+                           <title>অ্যাপয়েন্টমেন্ট QR কোড</title>
+                           <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+                           <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+                           <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+                         </head>
+                         <body style="text-align:center;padding:20px;">
+                           <h2>ক্লিনিক কানেক্ট - অ্যাপয়েন্টমেন্ট</h2>
+                           <p>ডাক্তার: ${selectedApt.doctor}</p>
+                           <p>তারিখ: ${formatDate(selectedApt.date)}</p>
+                           <p>সময়: ${selectedApt.time_range}</p>
+                           <div id="qrcode"></div>
+                           <script type="text/babel">
+                             const QrCode = window.QRCodeSVG.default || window.QRCodeSVG;
+                             ReactDOM.render(
+                               React.createElement(QrCode, {
+                                 value: '${window.location.origin}/dashboard/patient/appointments?id=${selectedApt.id}',
+                                 size: 200
+                               }),
+                               document.getElementById('qrcode')
+                             );
+                           </script>
+                         </body>
+                       </html>
+                     `);
+                     printWindow.document.close();
+                     printWindow.focus();
+                     printWindow.print();
+                   }
+                 }}
+                 className="w-full"
+               >
+                 প্রিন্ট করুন
+               </Button>
+             </div>
+           )}
+         </Modal>
+       </div>
+     </DashboardLayout>
   );
 }

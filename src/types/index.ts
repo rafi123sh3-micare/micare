@@ -31,6 +31,8 @@ export interface Patient {
   phone: string;
   age: number;
   gender: 'male' | 'female' | 'other';
+  weight: number;
+  compliant: boolean;
   address?: string;
 }
 

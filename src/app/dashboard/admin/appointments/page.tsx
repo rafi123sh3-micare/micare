@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Search, Filter, Check, X, Calendar, Clock, Video, MoreVertical, ChevronLeft, ChevronRight, CheckCircle, Plus, Zap } from 'lucide-react';
-import { supabase, generateSerialNumber } from '@/lib/supabase';
+import { Search, Filter, Check, X, Calendar, Clock, Video, MoreVertical, ChevronLeft, ChevronRight, ChevronDown, CheckCircle, Plus, Zap, FileText, Upload } from 'lucide-react';
+import { supabase, supabase1, generateSerialNumber } from '@/lib/supabase';
 import { setCache, getCache } from '@/lib/cache';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { StatusPill } from '@/components/ui/StatusPill';
+import { QRCode } from '@/components/ui/QRCode';
 import { sendNotification, requestPushPermission } from '@/lib/notifications';
 import DatePicker from '@/components/ui/DatePicker';
 import { motion } from 'framer-motion';
@@ -61,18 +62,30 @@ export default function AdminAppointments() {
   const [walkinPatient, setWalkinPatient] = useState({
     name: '',
     phone: '',
-    age: '',
+    age: 0 as number,
+    sex: '' as 'male' | 'female' | 'other',
+    weight: 0 as number,
     doctor_id: '',
     type: 'in-person' as 'in-person' | 'teleconsult',
     date: getLocalDateString(),
     time: '',
     reason: '',
+    compliant: false as boolean,
   });
   const [creatingWalkin, setCreatingWalkin] = useState(false);
   const [specialTimePower, setSpecialTimePower] = useState(false);
   const [customTime, setCustomTime] = useState('');
   const [schedules, setSchedules] = useState<any[]>([]);
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrAppointment, setQRAppointment] = useState<any>(null);
+  const [showPrescribeConfirm, setShowPrescribeConfirm] = useState(false);
+  const [prescribePatient, setPrescribePatient] = useState<any>(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyPatient, setHistoryPatient] = useState<any>(null);
+  const [historyQuestions, setHistoryQuestions] = useState<any[]>([]);
+  const [historyAnswers, setHistoryAnswers] = useState<{[key: string]: string}>({});
+  const [historyStep, setHistoryStep] = useState(0);
 
   useEffect(() => {
     loadData();
@@ -435,18 +448,22 @@ export default function AdminAppointments() {
 
     setCreatingWalkin(true);
 
-    try {
-      // First, create a minimal patient record to satisfy the foreign key constraint
-      const { data: newPatient, error: patientError } = await supabase
-        .from('patients')
-        .insert({
-          name: walkinPatient.name,
-          phone: walkinPatient.phone || '',
-          email: `walkin_${Date.now()}@clinicconnect.local`,
-          password: 'walkin_temp',
-        })
-        .select('id')
-        .single();
+try {
+       // First, create a minimal patient record to satisfy the foreign key constraint
+       const { data: newPatient, error: patientError } = await supabase
+         .from('patients')
+         .insert({
+           name: walkinPatient.name,
+           phone: walkinPatient.phone || '',
+           email: `walkin_${Date.now()}@clinicconnect.local`,
+           password: 'walkin_temp',
+           age: walkinPatient.age,
+           sex: walkinPatient.sex || 'male',
+           weight: walkinPatient.weight,
+           compliant: true,
+         })
+         .select('id')
+         .single();
 
       if (patientError || !newPatient) {
         console.error('Patient Insert Error:', patientError);
@@ -485,19 +502,30 @@ export default function AdminAppointments() {
 
       console.log('Appointment insert result:', { error: aptError });
 
-      if (aptError) {
-        console.error('Appointment Insert Error:', aptError);
-        toast.error(`অ্যাপয়েন্টমেন্ট তৈরি করতে ব্যর্থ: ${aptError?.message || 'Unknown error'}`);
-        setCreatingWalkin(false);
-        return;
-      }
+if (aptError) {
+       console.error('Appointment Insert Error:', aptError);
+       toast.error(`অ্যাপয়েন্টমেন্ট তৈরি করতে ব্যর্থ: ${aptError?.message || 'Unknown error'}`);
+       setCreatingWalkin(false);
+       return;
+     }
 
-      toast.success('অ্যাপয়েন্টমেন্ট যোগ হয়েছে');
-      setShowWalkinModal(false);
-      setWalkinPatient({ name: '', phone: '', age: '', doctor_id: '', type: 'in-person', date: getLocalDateString(), time: '', reason: '' });
-      setSpecialTimePower(false);
-      setCustomTime('');
-      loadData();
+     // Show QR code modal after successful creation
+     const { data: createdApt } = await supabase
+       .from('appointments')
+       .select('*, patients(*), doctors(*)')
+       .eq('patient_id', newPatient.id)
+       .order('created_at', { ascending: false })
+       .limit(1)
+       .single();
+
+     toast.success('অ্যাপয়েন্টমেন্ট যোগ হয়েছে');
+     setQRAppointment(createdApt);
+     setShowQRModal(true);
+     setShowWalkinModal(false);
+     setWalkinPatient({ name: '', phone: '', age: 0, sex: 'male', weight: 0, doctor_id: '', type: 'in-person', date: getLocalDateString(), time: '', reason: '', compliant: false });
+     setSpecialTimePower(false);
+     setCustomTime('');
+     loadData();
     } catch (err) {
       toast.error('কিছু সমস্যা হয়েছে');
     } finally {
@@ -514,6 +542,113 @@ export default function AdminAppointments() {
       }
     }
     return <StatusPill status={displayStatus as any} />;
+  };
+
+  const handlePrescribe = async (apt: any) => {
+    setPrescribePatient({
+      patient_id: apt.patient_id,
+    });
+    setShowPrescribeConfirm(true);
+  };
+
+  const handleHistory = async (apt: any) => {
+    try {
+      console.log('Fetching history_templates from supabase1...');
+      const { data: templates, error: templatesError } = await supabase1
+        .from('history_templates')
+        .select('*');
+      
+      if (templatesError) {
+        console.error('Error fetching history_templates:', templatesError);
+      }
+      console.log('Templates received:', templates);
+      
+      const flatQuestions = (templates || []).flatMap((row: any) =>
+        (row.questions || []).map((q: string, idx: number) => ({
+          id: `${row.id}_${idx}`,
+          disease_name: row.disease_name,
+          question: q,
+        }))
+      );
+      
+      const { data: existingHistory } = await supabase
+        .from('patient_history')
+        .select('*')
+        .eq('patient_id', apt.patient_id);
+      
+      const existingAnswers: {[key: string]: string} = {};
+      if (existingHistory) {
+        existingHistory.forEach((h: any) => {
+          existingAnswers[h.question_id] = h.answer;
+        });
+      }
+      
+      const fallbackTemplates = [
+        { id: 'demo-1', disease_name: 'ডায়াবেটিস', question: 'আপনার বর্তমান সুগার লেভেল কত?' },
+        { id: 'demo-2', disease_name: 'ডায়াবেটিস', question: 'কখন শেষবার চেক করেছিলেন?' },
+        { id: 'demo-3', disease_name: 'উচ্চ রক্তচাপ', question: 'আপনার বর্তমান প্রেসার কত?' },
+        { id: 'demo-4', disease_name: 'উচ্চ রক্তচাপ', question: 'ওষুধ নিয়মিত খান?' },
+        { id: 'demo-5', disease_name: 'হৃদরোগ', question: 'বুকে ব্যথা অনুভব করছেন?' },
+        { id: 'demo-6', disease_name: 'হৃদরোগ', question: 'শ্বাস নিতে কষ্ট হচ্ছে?' },
+      ];
+      setHistoryQuestions(flatQuestions.length > 0 ? flatQuestions : fallbackTemplates);
+      setHistoryStep(-1);
+    } catch (err) {
+      console.error('handleHistory crashed:', err);
+      setHistoryQuestions([
+        { id: 'demo-1', disease_name: 'ডায়াবেটিস', question: 'আপনার বর্তমান সুগার লেভেল কত?' },
+        { id: 'demo-2', disease_name: 'ডায়াবেটিস', question: 'কখন শেষবার চেক করেছিলেন?' },
+        { id: 'demo-3', disease_name: 'উচ্চ রক্তচাপ', question: 'আপনার বর্তমান প্রেসার কত?' },
+        { id: 'demo-4', disease_name: 'উচ্চ রক্তচাপ', question: 'ওষুধ নিয়মিত খান?' },
+        { id: 'demo-5', disease_name: 'হৃদরোগ', question: 'বুকে ব্যথা অনুভব করছেন?' },
+        { id: 'demo-6', disease_name: 'হৃদরোগ', question: 'শ্বাস নিতে কষ্ট হচ্ছে?' },
+      ]);
+      setHistoryStep(-1);
+    }
+    setHistoryPatient({
+      patient_id: apt.patient_id,
+      patient_name: apt.patientName,
+      appointment_id: apt.id,
+    });
+    setHistoryAnswers({});
+    setShowHistoryModal(true);
+  };
+
+  const submitHistoryAnswers = async () => {
+    if (!historyPatient) return;
+
+    await supabase
+      .from('patient_history')
+      .delete()
+      .eq('patient_id', historyPatient.patient_id);
+
+    const answersToInsert = Object.entries(historyAnswers).map(([question_id, answer]) => {
+      const q = historyQuestions.find((hq: any) => hq.id === question_id);
+      return {
+        patient_id: historyPatient.patient_id,
+        question_id,
+        disease_name: q?.disease_name || '',
+        question: q?.question || '',
+        answer,
+      };
+    });
+
+    if (answersToInsert.length === 0) {
+      toast.success('ইতিহাস সংরক্ষিত হয়েছে');
+      setShowHistoryModal(false);
+      return;
+    }
+
+    const { error } = await supabase
+      .from('patient_history')
+      .insert(answersToInsert);
+
+    if (!error) {
+      toast.success('ইতিহাস সংরক্ষিত হয়েছে');
+      setShowHistoryModal(false);
+    } else {
+      toast.error('ইতিহাস সংরক্ষণে সমস্যা হয়েছে');
+    }
   };
 
   if (loading) {
@@ -685,48 +820,80 @@ export default function AdminAppointments() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {apt.status !== 'completed' && (
-                            <>
-                              {apt.status === 'pending' && (
-                                <>
-                                  <button
-                                    onClick={() => handleApprove(apt, apt.status)}
-                                    className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
-                                    title="নিশ্চিত করুন"
-                                  >
-                                    <Check className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleReject(apt)}
-                                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                    title="বাতিল করুন"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
-                              {apt.status === 'confirmed' && (
-                                <button
-                                  onClick={() => handleApprove(apt, apt.status)}
-                                  className="p-2 text-amber-500 hover:bg-amber-50 rounded-lg transition-colors"
-                                  title="অপেক্ষায় করুন"
-                                >
-                                  <Clock className="w-4 h-4" />
-                                </button>
-                              )}
-                              {apt.status === 'cancelled' && (
-                                <button
-                                  onClick={() => handleApprove(apt, apt.status)}
-                                  className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
-                                  title="পুনরুদ্ধার করুন"
-                                >
-                                  <Check className="w-4 h-4" />
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </td>
+{apt.status !== 'completed' && (
+                             <>
+                               {apt.status === 'pending' && (
+                                 <>
+                                   <button
+                                     onClick={() => handleApprove(apt, apt.status)}
+                                     className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
+                                     title="নিশ্চিত করুন"
+                                   >
+                                     <Check className="w-4 h-4" />
+                                   </button>
+                                   <button
+                                     onClick={() => handleReject(apt)}
+                                     className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                     title="বাতিল করুন"
+                                   >
+                                     <X className="w-4 h-4" />
+                                   </button>
+                                 </>
+                               )}
+                               {apt.status === 'confirmed' && (
+                                 <button
+                                   onClick={() => handleApprove(apt, apt.status)}
+                                   className="p-2 text-amber-500 hover:bg-amber-50 rounded-lg transition-colors"
+                                   title="অপেক্ষায় করুন"
+                                 >
+                                   <Clock className="w-4 h-4" />
+                                 </button>
+                               )}
+                               {apt.status === 'cancelled' && (
+                                 <button
+                                   onClick={() => handleApprove(apt, apt.status)}
+                                   className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
+                                   title="পুনরুদ্ধার করুন"
+                                 >
+                                   <Check className="w-4 h-4" />
+                                 </button>
+                               )}
+                               <button
+                                 onClick={() => handlePrescribe(apt)}
+                                 className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                                 title="প্রেসক্রিব"
+                               >
+                                 <FileText className="w-4 h-4" />
+                               </button>
+                               <button
+                                 onClick={() => handleHistory(apt)}
+                                 className="p-2 text-purple-500 hover:bg-purple-50 rounded-lg transition-colors"
+                                 title="ইতিহাস"
+                               >
+                                 <FileText className="w-4 h-4" />
+                               </button>
+                             </>
+                           )}
+                           {apt.status === 'completed' && (
+                             <div className="flex items-center justify-end gap-1">
+                               <button
+                                 onClick={() => handlePrescribe(apt)}
+                                 className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                                 title="প্রেসক্রিব"
+                               >
+                                 <FileText className="w-4 h-4" />
+                               </button>
+                               <button
+                                 onClick={() => handleHistory(apt)}
+                                 className="p-2 text-purple-500 hover:bg-purple-50 rounded-lg transition-colors"
+                                 title="ইতিহাস"
+                               >
+                                 <FileText className="w-4 h-4" />
+                               </button>
+                             </div>
+                           )}
+                         </div>
+                       </td>
                     </motion.tr>
                   ))
                 )}
@@ -754,18 +921,54 @@ export default function AdminAppointments() {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-3">
-            <div>
-              <label className="text-sm font-medium text-slate-600 mb-2 block">ফোন নম্বর</label>
-              <input
-                type="tel"
-                value={walkinPatient.phone}
-                onChange={(e) => setWalkinPatient({ ...walkinPatient, phone: e.target.value })}
-                className="input w-full"
-                placeholder="01XXXXXXXXX"
-              />
+<div className="grid grid-cols-1 gap-3">
+             <div>
+               <label className="text-sm font-medium text-slate-600 mb-2 block">ফোন নম্বর</label>
+               <input
+                 type="tel"
+                 value={walkinPatient.phone}
+                 onChange={(e) => setWalkinPatient({ ...walkinPatient, phone: e.target.value })}
+                 className="input w-full"
+                 placeholder="01XXXXXXXXX"
+               />
+             </div>
+           </div>
+           
+           <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-sm font-medium text-slate-600 mb-2 block">বয়স *</label>
+                <input
+                  type="number"
+                  value={walkinPatient.age}
+                  onChange={(e) => setWalkinPatient({ ...walkinPatient, age: parseInt(e.target.value) || 0 })}
+                  className="input w-full"
+                  placeholder="বয়স"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-600 mb-2 block">লিঙ্গ *</label>
+                <select
+                  value={walkinPatient.sex}
+                  onChange={(e) => setWalkinPatient({ ...walkinPatient, sex: e.target.value as 'male' | 'female' | 'other' })}
+                  className="input w-full"
+                >
+                  <option value="">লিঙ্গ নির্বাচন করুন</option>
+                  <option value="male">পুরুষ</option>
+                  <option value="female">মহিলা</option>
+                  <option value="other">অন্যান্য</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-600 mb-2 block">ওজন (kg)</label>
+                <input
+                  type="number"
+                  value={walkinPatient.weight}
+                  onChange={(e) => setWalkinPatient({ ...walkinPatient, weight: parseFloat(e.target.value) || 0 })}
+                  className="input w-full"
+                  placeholder="ওজন"
+                />
+              </div>
             </div>
-          </div>
 
           <div>
             <label className="text-sm font-medium text-slate-600 mb-2 block">ডাক্তার নির্বাচন *</label>
@@ -876,6 +1079,217 @@ export default function AdminAppointments() {
           >
             {creatingWalkin ? 'যোগ হচ্ছে...' : 'অ্যাপয়েন্টমেন্ট যোগ করুন'}
           </Button>
+        </div>
+      </Modal>
+
+      {/* QR CODE MODAL */}
+      <Modal
+        isOpen={showQRModal}
+        onClose={() => setShowQRModal(false)}
+        title="অ্যাপয়েন্টমেন্ট QR কোড"
+        size="sm"
+      >
+        {qrAppointment && (
+          <div className="space-y-4 text-center">
+            <div className="flex justify-center" id="qr-code-print-area">
+              <QRCode value={`${window.location.origin}/dashboard/patient/appointments?id=${qrAppointment.id}`} size={200} />
+            </div>
+            <div className="space-y-2">
+              <p className="font-semibold">{qrAppointment.patients?.name}</p>
+              <p className="text-sm text-slate-500">{formatDate(qrAppointment.date)} - {qrAppointment.time?.substring(0, 5)}</p>
+            </div>
+              <Button
+                  onClick={() => {
+                    const printWindow = window.open('', '_blank');
+                    if (printWindow) {
+                      const qrSvg = document.querySelector('#qr-code-print-area svg');
+                      const svgHtml = qrSvg ? qrSvg.outerHTML : '';
+                      printWindow.document.write(`
+                        <html>
+                          <head>
+                            <title>অ্যাপয়েন্টমেন্ট QR কোড</title>
+                          </head>
+                          <body style="text-align:center;padding:20px;font-family:sans-serif;">
+                            <h2>ক্লিনিক কানেক্ট - অ্যাপয়েন্টমেন্ট</h2>
+                            <p>রোগী: ${qrAppointment.patients?.name}</p>
+                            <p>তারিখ: ${formatDate(qrAppointment.date)}</p>
+                            <p>সময়: ${qrAppointment.time?.substring(0, 5)}</p>
+                            ${svgHtml}
+                          </body>
+                        </html>
+                      `);
+                      printWindow.document.close();
+                      printWindow.focus();
+                      printWindow.print();
+                    }
+                  }}
+                  className="w-full"
+                >
+                  প্রিন্ট করুন
+                </Button>
+          </div>
+        )}
+      </Modal>
+
+      {/* PRESCRIBE CONFIRM MODAL */}
+      <Modal
+        isOpen={showPrescribeConfirm}
+        onClose={() => setShowPrescribeConfirm(false)}
+        title="প্রেসক্রিব নিশ্চিতকরণ"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p>আপনি কি রোগী <strong>{prescribePatient?.patient_name}</strong> এর জন্য প্রেসক্রিব পেজে যেতে চান?</p>
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => setShowPrescribeConfirm(false)} className="flex-1">
+              বাতিল
+            </Button>
+            <Button
+              onClick={() => {
+                window.open(`https://carescriptrx.vercel.app/dashboard/doctor/prescribe?patient_id=${prescribePatient?.patient_id}`, '_blank');
+                setShowPrescribeConfirm(false);
+              }}
+              className="flex-1"
+            >
+              যেতে চান
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* HISTORY MODAL */}
+      <Modal
+        isOpen={showHistoryModal}
+        onClose={() => { setShowHistoryModal(false); setHistoryStep(-1); }}
+        title="রোগী ইতিহাস"
+        size="xl"
+      >
+        <div className="space-y-6">
+          <p className="font-semibold text-lg">{historyPatient?.patient_name} এর জন্য ইতিহাস ফর্ম</p>
+          {historyQuestions.length === 0 ? (
+            <p className="text-slate-500">কোনো প্রশ্ন পাওয়া যায়নি</p>
+          ) : (
+              (() => {
+                const grouped = historyQuestions.reduce((acc: Record<string, any[]>, q: any) => {
+                  const disease = q.disease_name || 'সাধারণ';
+                  if (!acc[disease]) acc[disease] = [];
+                  acc[disease].push(q);
+                  return acc;
+                }, {});
+                const diseaseNames = Object.keys(grouped);
+
+                // --- DISEASE SELECTION SCREEN ---
+                if (historyStep === -1) {
+                  return (
+                    <div className="grid grid-cols-2 gap-3">
+                      {diseaseNames.map((name, idx) => (
+                        <button
+                          key={name}
+                          onClick={() => setHistoryStep(idx)}
+                          className="p-5 rounded-xl border-2 border-slate-200 hover:border-primary-400 hover:bg-primary-50 transition-all text-left"
+                        >
+                          <h4 className="font-bold text-primary-700 text-lg">{name}</h4>
+                          <p className="text-xs text-slate-500 mt-1">{grouped[name].length} টি প্রশ্ন</p>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                }
+
+                // --- QUESTIONS SCREEN ---
+                const currentDisease = diseaseNames[historyStep];
+                const currentQuestions = grouped[currentDisease];
+
+                return (
+                  <>
+                    {/* Disease header */}
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xl font-bold text-primary-700">{currentDisease}</h3>
+                    </div>
+
+                    {/* Questions */}
+                    <div className="space-y-4">
+                      {currentQuestions.map((q: any, qIdx: number) => {
+                        const imgKey = `${q.id}_img`;
+                        const vidKey = `${q.id}_vid`;
+                        const audKey = `${q.id}_aud`;
+                        const uploadBtn = (label: string, key: string, accept: string, icon: any) => (
+                          <div className="space-y-1">
+                            {historyAnswers[key] ? (
+                              <div className="relative inline-block">
+                                {accept.startsWith('image') && <img src={historyAnswers[key]} alt="" className="max-h-28 rounded-lg object-cover" />}
+                                {accept.startsWith('video') && <video src={historyAnswers[key]} controls className="max-h-28 rounded-lg" />}
+                                {accept.startsWith('audio') && <audio src={historyAnswers[key]} controls className="h-10" />}
+                                <button type="button" onClick={() => { const a={...historyAnswers}; delete a[key]; setHistoryAnswers(a); }} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">X</button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+                                  const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+                                  if (!cloudName || !uploadPreset) { toast.error('Cloudinary কনফিগার করা হয়নি'); return; }
+                                  const openWidget = () => {
+                                    const w = (window as any).cloudinary.createUploadWidget(
+                                      { cloudName, uploadPreset, maxFileSize: 50000000 },
+                                      (e: any, r: any) => { if (!e && r && r.event === 'success') { setHistoryAnswers((p: any) => ({...p, [key]: r.info.secure_url})); toast.success('আপলোড সফল'); } }
+                                    );
+                                    w.open();
+                                  };
+                                  if (!(window as any).cloudinary) {
+                                    const s = document.createElement('script');
+                                    s.src = 'https://upload-widget.cloudinary.com/global/all.js';
+                                    s.onload = openWidget;
+                                    document.body.appendChild(s);
+                                  } else openWidget();
+                                }}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-xs font-medium"
+                              >
+                                {icon}
+                                {label}
+                              </button>
+                            )}
+                          </div>
+                        );
+                        return (
+                          <div key={q.id} className="bg-slate-50 rounded-xl p-4 space-y-3">
+                            <div className="flex items-start gap-3">
+                              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">
+                                {qIdx + 1}
+                              </span>
+                              <div className="flex-1 space-y-3">
+                                <label className="text-sm font-semibold text-slate-700">{q.question}</label>
+                                <textarea
+                                  value={historyAnswers[q.id] || ''}
+                                  onChange={(e) => setHistoryAnswers({ ...historyAnswers, [q.id]: e.target.value })}
+                                  className="input w-full min-h-[70px] resize-y"
+                                  placeholder="লিখুন..."
+                                />
+                                <div className="flex flex-wrap gap-2">
+                                  {uploadBtn('ছবি', imgKey, 'image/*', <Upload className="w-3.5 h-3.5" />)}
+                                  {uploadBtn('ভিডিও', vidKey, 'video/*', <Video className="w-3.5 h-3.5" />)}
+                                  {uploadBtn('অডিও', audKey, 'audio/*', <Upload className="w-3.5 h-3.5" />)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Navigation */}
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                      <Button variant="secondary" onClick={() => setHistoryStep(-1)}>
+                        রোগ নির্বাচন
+                      </Button>
+                      <Button onClick={submitHistoryAnswers}>
+                        সংরক্ষণ করুন
+                      </Button>
+                    </div>
+                  </>
+                );
+              })()
+          )}
         </div>
       </Modal>
     </DashboardLayout>
