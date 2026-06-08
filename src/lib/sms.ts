@@ -1,3 +1,5 @@
+import toast from 'react-hot-toast';
+
 export async function sendSMS(phone: string, message: string): Promise<boolean> {
   try {
     const formattedPhone = phone.startsWith('01') ? '88' + phone :
@@ -13,14 +15,14 @@ export async function sendSMS(phone: string, message: string): Promise<boolean> 
 
     const data = await response.json();
     if (data.error === 0) {
-      console.log('SMS sent successfully:', data);
+      toast.success('SMS সফলভাবে পাঠানো হয়েছে');
       return true;
     } else {
-      console.error('SMS send failed:', data);
+      toast.error('SMS পাঠানো ব্যর্থ হয়েছে');
       return false;
     }
   } catch (error) {
-    console.error('SMS send error:', error);
+    toast.error('SMS পাঠানোতে ত্রুটি হয়েছে');
     return false;
   }
 }
