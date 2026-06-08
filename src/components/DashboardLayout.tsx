@@ -38,7 +38,6 @@ type NavItems = {
 const NAV_ITEMS: NavItems = {
   admin: [
     { href: '/dashboard/admin', label: 'ড্যাশবোর্ড', icon: LayoutDashboard, color: 'from-blue-500 to-cyan-500' },
-    { href: '/dashboard/admin/schedule', label: 'শিফট ম্যানেজমেন্ট', icon: Calendar, color: 'from-purple-500 to-pink-500' },
     { href: '/dashboard/admin/doctors', label: 'ডাক্তার তালিকা', icon: Users, color: 'from-emerald-500 to-teal-500' },
     { href: '/dashboard/admin/appointments', label: 'অ্যাপয়েন্টমেন্ট', icon: Calendar, color: 'from-orange-500 to-amber-500' },
     { href: '/dashboard/admin/reports', label: 'রিপোর্ট', icon: TrendingUp, color: 'from-amber-500 to-orange-500' },
@@ -46,7 +45,6 @@ const NAV_ITEMS: NavItems = {
   ],
   doctor: [
     { href: '/dashboard/doctor', label: 'আজকের দিন', icon: LayoutDashboard, color: 'from-emerald-500 to-cyan-500' },
-    { href: '/dashboard/doctor/schedule', label: 'আমার শিফট', icon: Calendar, color: 'from-violet-500 to-purple-500' },
     { href: '/dashboard/doctor/appointments', label: 'অ্যাপয়েন্টমেন্ট', icon: Calendar, color: 'from-rose-500 to-pink-500' },
     { href: '/dashboard/doctor/teleconsult', label: 'ভিডিও কল', icon: Video, color: 'from-sky-500 to-blue-500' },
   ],

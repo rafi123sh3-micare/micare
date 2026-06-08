@@ -1,13 +1,13 @@
 import toast from 'react-hot-toast';
 
 function maskPhone(phone: string): string {
-  if (phone.length < 6) return '***';
+  if (!phone || phone.length < 4) return '***';
   return phone.slice(0, 3) + '****' + phone.slice(-3);
 }
 
 export async function sendSMS(phone: string, message: string): Promise<boolean> {
-  const maskedPhone = maskPhone(phone);
   try {
+    const maskedPhone = maskPhone(phone);
     const formattedPhone = phone.startsWith('01') ? '88' + phone :
       phone.startsWith('+88') ? phone.replace('+', '') :
         phone.startsWith('880') ? phone :
@@ -27,14 +27,14 @@ export async function sendSMS(phone: string, message: string): Promise<boolean> 
       console.log(`[SMS] Sent successfully to ${maskedPhone}`);
       toast.success('SMS সফলভাবে পাঠানো হয়েছে');
       return true;
-    } else {
-      console.error(`[SMS] Provider error for ${maskedPhone}:`, JSON.stringify(data));
-      toast.error('SMS পাঠানো ব্যর্থ হয়েছে');
-      return false;
     }
+
+    console.error(`[SMS] Provider error for ${maskedPhone}:`, JSON.stringify(data));
+    toast.error('SMS পাঠানো ব্যর্থ হয়েছে');
+    return false;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[SMS] Network/fetch error for ${maskedPhone}:`, errorMessage);
+    console.error(`[SMS] Failed for ${phone ? maskPhone(phone) : 'unknown'}:`, errorMessage);
     toast.error('SMS পাঠানোতে ত্রুটি হয়েছে');
     return false;
   }

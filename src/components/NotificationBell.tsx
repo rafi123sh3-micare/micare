@@ -80,7 +80,7 @@ export function NotificationBell({ role, userId }: Props) {
       const { data: doctorData } = await supabase
         .from('doctors')
         .select('id')
-        .eq('user_id', userId)
+        .eq('id', userId)
         .single();
 
       if (doctorData) {

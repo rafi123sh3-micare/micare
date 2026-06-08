@@ -4,14 +4,12 @@ import { logger } from '@/lib/logger';
 const SMS_API_KEY = process.env.SMS_NET_BD_API_KEY;
 const SMS_API_URL = 'https://api.sms.net.bd/sendsms';
 
-const requestIdHeader = 'x-request-id';
-
-function getRequestId(request: NextRequest): string {
-  return request.headers.get(requestIdHeader) || crypto.randomUUID();
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 export async function POST(request: NextRequest) {
-  const requestId = getRequestId(request);
+  const requestId = generateId();
   const meta = { requestId };
 
   try {

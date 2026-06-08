@@ -2,16 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Search, Calendar, Clock, Video, CheckCircle, X, FileText, ChevronDown, Upload } from 'lucide-react';
-import { supabase, supabase1 } from '@/lib/supabase';
+import { Search, Calendar, Clock, Video, CheckCircle, X, FileText, ChevronDown, Upload, Check, Plus, Zap } from 'lucide-react';
+import { supabase, supabase1, generateSerialNumber } from '@/lib/supabase';
 import { Card } from '@/components/ui/Card';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
+import { QRCode } from '@/components/ui/QRCode';
 import DatePicker from '@/components/ui/DatePicker';
 import toast from 'react-hot-toast';
 import { sendNotification, requestPushPermission } from '@/lib/notifications';
 import { sendSMS, buildConfirmationSMS } from '@/lib/sms';
+import { motion } from 'framer-motion';
 
 const statusConfig = {
   pending: { value: 'pending', label: 'অপেক্ষায়' },
@@ -41,6 +43,23 @@ export default function DoctorAppointments() {
   const [historyQuestions, setHistoryQuestions] = useState<any[]>([]);
   const [historyAnswers, setHistoryAnswers] = useState<{[key: string]: string}>({});
   const [historyStep, setHistoryStep] = useState(0);
+  const [showWalkinModal, setShowWalkinModal] = useState(false);
+  const [walkinPatient, setWalkinPatient] = useState({
+    name: '',
+    phone: '',
+    age: 0 as number,
+    sex: '' as 'male' | 'female' | 'other',
+    weight: 0 as number,
+    type: 'in-person' as 'in-person' | 'teleconsult',
+    date: getLocalDateString(),
+    time: '',
+    reason: '',
+    compliant: '',
+  });
+  const [creatingWalkin, setCreatingWalkin] = useState(false);
+  const [specialTimePower, setSpecialTimePower] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrAppointment, setQRAppointment] = useState<any>(null);
 
   useEffect(() => {
     loadAppointments();
@@ -103,7 +122,7 @@ const statusOrder: Record<string, number> = {
         pending: 1,
         confirmed: 2,
         completed: 3,
-        upcoming: 2, // Treat upcoming as confirmed for sorting
+        upcoming: 2,
         cancelled: 4,
       };
 
@@ -137,6 +156,8 @@ const statusOrder: Record<string, number> = {
   const formatTime = (timeStr: string) => timeStr ? timeStr.substring(0, 5) : '';
 
   async function updateStatus(aptId: string, newStatus: string) {
+    const doctorData = JSON.parse(localStorage.getItem('doctorData') || 'null');
+
     const { data: apt } = await supabase
       .from('appointments')
       .select('*, patients(name, phone), doctors(name)')
@@ -146,27 +167,11 @@ const statusOrder: Record<string, number> = {
     let updateData: any = { status: newStatus };
 
     if (newStatus === 'confirmed' && !apt?.serial_number) {
-      const { data: doctor } = await supabase
-        .from('doctors')
-        .select('doctor_code')
-        .eq('id', apt.doctor_id)
-        .single();
-
-      const doctorCode = doctor?.doctor_code || 'DR01';
-      const typeSuffix = apt.type === 'teleconsult' ? 'T' : 'A';
-
-      const { data: existingApts } = await supabase
-        .from('appointments')
-        .select('id')
-        .eq('doctor_id', apt.doctor_id)
-        .eq('date', apt.date)
-        .neq('id', aptId)
-        .in('status', ['confirmed', 'completed']);
-
-      const count = existingApts?.length || 0;
-      const nextNumber = count + 1;
-      const serialNumber = `${doctorCode}-${String(nextNumber).padStart(3, '0')}${typeSuffix}`;
-      
+      const serialNumber = await generateSerialNumber(
+        apt.doctor_id,
+        apt.date,
+        apt.type === 'teleconsult' ? 'teleconsult' : 'appointment'
+      );
       updateData.serial_number = serialNumber;
     }
 
@@ -177,8 +182,6 @@ const statusOrder: Record<string, number> = {
 
     if (!error && apt) {
       requestPushPermission();
-
-      const doctorData = JSON.parse(localStorage.getItem('doctorData') || 'null');
 
       if (newStatus === 'confirmed') {
         try {
@@ -277,45 +280,137 @@ const statusOrder: Record<string, number> = {
     }
   }
 
+  const handleApprove = async (apt: any, currentStatus: string) => {
+    let newStatus: string;
+    if (currentStatus === 'pending') newStatus = 'confirmed';
+    else if (currentStatus === 'confirmed') newStatus = 'pending';
+    else if (currentStatus === 'cancelled') newStatus = 'confirmed';
+    else newStatus = 'confirmed';
+
+    if (!apt || !apt.id) {
+      toast.error('অ্যাপয়েন্টমেন্ট খুঁজে পাওয়া যায়নি');
+      return;
+    }
+
+    let updateData: any = { status: newStatus };
+
+    if ((newStatus === 'confirmed' || newStatus === 'completed') && !apt.serial_number) {
+      const serialNumber = await generateSerialNumber(
+        apt.doctor_id,
+        apt.date,
+        apt.type === 'teleconsult' ? 'teleconsult' : 'appointment'
+      );
+      updateData.serial_number = serialNumber;
+    }
+
+    const { error } = await supabase
+      .from('appointments')
+      .update(updateData)
+      .eq('id', apt.id);
+
+    if (error) {
+      toast.error('স্ট্যাটাস আপডেট করতে সমস্যা হয়েছে');
+    } else {
+      requestPushPermission();
+      if (newStatus === 'confirmed') {
+        try { await sendNotification('appointment_confirmed_patient', { patientId: apt.patient_id }, { patientName: apt.patients?.name, doctorName: apt.doctors?.name, date: apt.date }); } catch(e) {}
+        try { await sendNotification('appointment_confirmed_doctor', { doctorId: apt.doctor_id }, { patientName: apt.patients?.name, date: apt.date }); } catch(e) {}
+        try { const p = apt.patients?.phone; if(p) { await sendSMS(p, buildConfirmationSMS(apt.doctors?.name||'', apt.date, apt.time||'', apt.serial_number||'')); } } catch(e) {}
+      }
+      toast.success(newStatus === 'confirmed' ? 'নিশ্চিত হয়েছে' : 'অপেক্ষায় সেট করা হয়েছে');
+      loadAppointments();
+    }
+  };
+
+  const handleReject = async (apt: any) => {
+    if (!apt || !apt.id) { toast.error('অ্যাপয়েন্টমেন্ট খুঁজে পাওয়া যায়নি'); return; }
+    if (!confirm('এই অ্যাপয়েন্টমেন্ট বাতিল করতে চান?')) return;
+    const { error } = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', apt.id);
+    if (!error) { toast.success('অ্যাপয়েন্টমেন্ট বাতিল হয়েছে'); loadAppointments(); }
+  };
+
+  const handleComplete = async (apt: any) => {
+    const { error } = await supabase.from('appointments').update({ status: 'completed' }).eq('id', apt.id);
+    if (!error) {
+      await supabase.from('patients').update({ status: 'completed' }).eq('id', apt.patient_id);
+      toast.success('অ্যাপয়েন্টমেন্ট সম্পন্ন হয়েছে');
+      loadAppointments();
+    }
+  };
+
+  const handleAddWalkin = async () => {
+    const doctorData = JSON.parse(localStorage.getItem('doctorData') || 'null');
+    if (!walkinPatient.name) { toast.error('রোগীর নাম লিখুন'); return; }
+    setCreatingWalkin(true);
+    try {
+      const { data: newPatient, error: patientError } = await supabase.from('patients').insert({
+        name: walkinPatient.name, phone: walkinPatient.phone || '', email: `walkin_${Date.now()}@clinicconnect.local`,
+        password: 'walkin_temp', age: walkinPatient.age, sex: walkinPatient.sex || 'male',
+        weight: walkinPatient.weight, compliant: walkinPatient.compliant || 'false',
+      }).select('id').single();
+      if (patientError || !newPatient) { toast.error('রোগী তৈরি করতে ব্যর্থ'); setCreatingWalkin(false); return; }
+      const getCurrentTime = () => { const n=new Date(); return `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`; };
+      const appointmentTime = specialTimePower ? getCurrentTime() : (walkinPatient.time ? walkinPatient.time.split(' - ')[0] : '09:00');
+      const type = walkinPatient.type === 'teleconsult' ? 'teleconsult' : 'appointment';
+      const serialNumber = await generateSerialNumber(doctorData.id, walkinPatient.date, type);
+      const { error: aptError } = await supabase.from('appointments').insert({
+        patient_id: newPatient.id, doctor_id: doctorData.id, date: walkinPatient.date,
+        time: appointmentTime, status: 'confirmed', type: walkinPatient.type,
+        reason: walkinPatient.reason || 'ওয়াক-ইন', serial_number: serialNumber,
+      });
+      if (aptError) { toast.error('অ্যাপয়েন্টমেন্ট তৈরি করতে ব্যর্থ'); setCreatingWalkin(false); return; }
+      const { data: createdApt } = await supabase.from('appointments').select('*, patients(*), doctors(*)').eq('patient_id', newPatient.id).order('created_at', { ascending: false }).limit(1).single();
+      toast.success('অ্যাপয়েন্টমেন্ট যোগ হয়েছে');
+      setQRAppointment(createdApt);
+      setShowQRModal(true);
+      setShowWalkinModal(false);
+      setWalkinPatient({ name: '', phone: '', age: 0, sex: 'male', weight: 0, type: 'in-person', date: getLocalDateString(), time: '', reason: '', compliant: '' });
+      setSpecialTimePower(false);
+      loadAppointments();
+    } catch(err) { toast.error('কিছু সমস্যা হয়েছে'); }
+    finally { setCreatingWalkin(false); }
+  };
+
+  const getStatusBadge = (status: string, displayStatus: string) => {
+    if (displayStatus === 'upcoming' || displayStatus === 'pending') {
+      if (status === 'pending') return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">অপেক্ষায়</span>;
+      else if (status === 'confirmed') return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">নিশ্চিত</span>;
+    }
+    return <StatusPill status={displayStatus as any} />;
+  };
+
   const handlePrescribe = async (apt: any) => {
-    setPrescribePatient({
-      patient_id: apt.patient_id,
-    });
+    setPrescribePatient({ patient_id: apt.patient_id });
     setShowPrescribeConfirm(true);
   };
 
   const handleHistory = async (apt: any) => {
     try {
-      console.log('Fetching history_templates from supabase1...');
       const { data: templates, error: templatesError } = await supabase1
         .from('history_templates')
         .select('*');
-      
-      if (templatesError) {
-        console.error('Error fetching history_templates:', templatesError);
-      }
-      console.log('Templates received:', templates);
-      
+      if (templatesError) console.error('Error fetching history_templates:', templatesError);
+      const typeMap: Record<string, string> = {
+        'text': 'text', 'Short Text': 'text',
+        'paragraph': 'paragraph', 'Paragraph': 'paragraph',
+        'multiple_choice': 'multiple_choice', 'Multiple Choice': 'multiple_choice',
+        'checkboxes': 'checkboxes', 'Checkboxes': 'checkboxes',
+        'dropdown': 'dropdown', 'Dropdown': 'dropdown',
+        'file_upload': 'file_upload', 'Media Upload': 'file_upload',
+        'date': 'date', 'Date': 'date',
+        'time': 'time', 'Time': 'time',
+        'scale': 'scale', 'Linear Scale': 'scale',
+      };
       const flatQuestions = (templates || []).flatMap((row: any) =>
-        (row.questions || []).map((q: string, idx: number) => ({
-          id: `${row.id}_${idx}`,
-          disease_name: row.disease_name,
-          question: q,
-        }))
+        (row.questions || []).map((q: any, idx: number) => {
+          if (typeof q === 'string') return { id: `${row.id}_${idx}`, disease_name: row.disease_name, question: q, type: 'paragraph', options: [], required: false };
+          const rawType = q.type || 'paragraph';
+          return { id: q.id || `${row.id}_${idx}`, disease_name: row.disease_name, question: q.text || q.question || '', type: typeMap[rawType] || 'text', options: q.options || [], required: q.required || false };
+        })
       );
-      
-      const { data: existingHistory } = await supabase
-        .from('patient_history')
-        .select('*')
-        .eq('patient_id', apt.patient_id);
-      
+      const { data: existingHistory } = await supabase.from('patient_history').select('*').eq('patient_id', apt.patient_id);
       const existingAnswers: {[key: string]: string} = {};
-      if (existingHistory) {
-        existingHistory.forEach((h: any) => {
-          existingAnswers[h.question_id] = h.answer;
-        });
-      }
-      
+      if (existingHistory) existingHistory.forEach((h: any) => { existingAnswers[h.question_id] = h.answer; });
       const fallbackTemplates = [
         { id: 'demo-1', disease_name: 'ডায়াবেটিস', question: 'আপনার বর্তমান সুগার লেভেল কত?' },
         { id: 'demo-2', disease_name: 'ডায়াবেটিস', question: 'কখন শেষবার চেক করেছিলেন?' },
@@ -328,60 +423,25 @@ const statusOrder: Record<string, number> = {
       setHistoryStep(-1);
     } catch (err) {
       console.error('handleHistory crashed:', err);
-      setHistoryQuestions([
-        { id: 'demo-1', disease_name: 'ডায়াবেটিস', question: 'আপনার বর্তমান সুগার লেভেল কত?' },
-        { id: 'demo-2', disease_name: 'ডায়াবেটিস', question: 'কখন শেষবার চেক করেছিলেন?' },
-        { id: 'demo-3', disease_name: 'উচ্চ রক্তচাপ', question: 'আপনার বর্তমান প্রেসার কত?' },
-        { id: 'demo-4', disease_name: 'উচ্চ রক্তচাপ', question: 'ওষুধ নিয়মিত খান?' },
-        { id: 'demo-5', disease_name: 'হৃদরোগ', question: 'বুকে ব্যথা অনুভব করছেন?' },
-        { id: 'demo-6', disease_name: 'হৃদরোগ', question: 'শ্বাস নিতে কষ্ট হচ্ছে?' },
-      ]);
+      setHistoryQuestions([{ id: 'demo-1', disease_name: 'ডায়াবেটিস', question: 'আপনার বর্তমান সুগার লেভেল কত?' }, { id: 'demo-2', disease_name: 'ডায়াবেটিস', question: 'কখন শেষবার চেক করেছিলেন?' }, { id: 'demo-3', disease_name: 'উচ্চ রক্তচাপ', question: 'আপনার বর্তমান প্রেসার কত?' }, { id: 'demo-4', disease_name: 'উচ্চ রক্তচাপ', question: 'ওষুধ নিয়মিত খান?' }, { id: 'demo-5', disease_name: 'হৃদরোগ', question: 'বুকে ব্যথা অনুভব করছেন?' }, { id: 'demo-6', disease_name: 'হৃদরোগ', question: 'শ্বাস নিতে কষ্ট হচ্ছে?' }]);
       setHistoryStep(-1);
     }
-    setHistoryPatient({
-      patient_id: apt.patient_id,
-      patient_name: apt.patientName,
-      appointment_id: apt.id,
-    });
+    setHistoryPatient({ patient_id: apt.patient_id, patient_name: apt.patientName, appointment_id: apt.id });
     setHistoryAnswers({});
     setShowHistoryModal(true);
   };
 
   const submitHistoryAnswers = async () => {
     if (!historyPatient) return;
-
-    await supabase
-      .from('patient_history')
-      .delete()
-      .eq('patient_id', historyPatient.patient_id);
-
+    await supabase.from('patient_history').delete().eq('patient_id', historyPatient.patient_id);
     const answersToInsert = Object.entries(historyAnswers).map(([question_id, answer]) => {
       const q = historyQuestions.find((hq: any) => hq.id === question_id);
-      return {
-        patient_id: historyPatient.patient_id,
-        question_id,
-        disease_name: q?.disease_name || '',
-        question: q?.question || '',
-        answer,
-      };
+      return { patient_id: historyPatient.patient_id, question_id, disease_name: q?.disease_name || '', question: q?.question || '', answer };
     });
-
-    if (answersToInsert.length === 0) {
-      toast.success('ইতিহাস সংরক্ষিত হয়েছে');
-      setShowHistoryModal(false);
-      return;
-    }
-
-    const { error } = await supabase
-      .from('patient_history')
-      .insert(answersToInsert);
-
-    if (!error) {
-      toast.success('ইতিহাস সংরক্ষিত হয়েছে');
-      setShowHistoryModal(false);
-    } else {
-      toast.error('ইতিহাস সংরক্ষণে সমস্যা হয়েছে');
-    }
+    if (answersToInsert.length === 0) { toast.success('ইতিহাস সংরক্ষিত হয়েছে'); setShowHistoryModal(false); return; }
+    const { error } = await supabase.from('patient_history').insert(answersToInsert);
+    if (!error) { toast.success('ইতিহাস সংরক্ষিত হয়েছে'); setShowHistoryModal(false); }
+    else toast.error('ইতিহাস সংরক্ষণে সমস্যা হয়েছে');
   };
 
   if (loading) {
@@ -396,343 +456,216 @@ const statusOrder: Record<string, number> = {
 
   return (
     <DashboardLayout role="doctor">
-      <div className="space-y-6 page-enter">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">অ্যাপয়েন্টমেন্ট</h1>
-          <p className="text-slate-500 mt-1">রোগীদের অ্যাপয়েন্টমেন্ট দেখুন</p>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 page-enter">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">অ্যাপয়েন্টমেন্ট</h1>
+            <p className="text-slate-500 mt-1">সকল অ্যাপয়েন্টমেন্ট দেখুন ও পরিচালনা করুন</p>
+          </div>
+          <Button onClick={() => setShowWalkinModal(true)}><Plus className="w-5 h-5" /> নতুন অ্যাপয়েন্টমেন্ট</Button>
         </div>
 
         <Card className="bg-white/80 backdrop-blur-xl border border-slate-200/60 shadow-lg shadow-slate-200/20">
           <div className="flex flex-wrap gap-4 items-end">
-            <div className="min-w-[140px]">
+            <div className="min-w-[160px]">
               <label className="text-sm font-medium text-slate-600 mb-2 block">তারিখ</label>
-              <DatePicker
-                value={filterDate}
-                onChange={setFilterDate}
-                className="!w-full"
-              />
+              <DatePicker value={filterDate} onChange={setFilterDate} className="!w-full" />
             </div>
-
-            <div className="min-w-[140px]">
+            <div className="min-w-[160px]">
               <label className="text-sm font-medium text-slate-600 mb-2 block">ধরন</label>
-              <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
-                className="input"
-              >
+              <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="input">
                 <option value="">সব ধরন</option>
                 <option value="walkin">সরাসরি ভিজিট</option>
                 <option value="teleconsult">ভিডিও কল</option>
               </select>
             </div>
-
-            <div className="min-w-[140px]">
+            <div className="min-w-[160px]">
               <label className="text-sm font-medium text-slate-600 mb-2 block">স্ট্যাটাস</label>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="input"
-              >
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="input">
                 <option value="">সব স্ট্যাটাস</option>
-                {Object.values(statusConfig).map(s => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
+                {Object.values(statusConfig).map(s => (<option key={s.value} value={s.value}>{s.label}</option>))}
               </select>
             </div>
-
-            <div className="flex-1 min-w-[200px]">
+            <div className="flex-1 min-w-[150px] sm:min-w-[200px]">
               <label className="text-sm font-medium text-slate-600 mb-2 block">খুঁজুন</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="রোগী খুঁজুন..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="input pl-10"
-                />
+                <input type="text" placeholder="রোগী খুঁজুন..." value={search} onChange={(e) => setSearch(e.target.value)} className="input pl-10 w-full" />
               </div>
             </div>
-
-            {(filterStatus || filterType || search || filterDate !== getLocalDateString()) && (
-              <button
-                onClick={() => {
-                  setFilterStatus('');
-                  setFilterType('');
-                  setSearch('');
-                  setFilterDate(getLocalDateString());
-                }}
-                className="px-4 py-2 text-sm text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-              >
-                রিসেট
-              </button>
-            )}
           </div>
         </Card>
 
-        {filteredAppointments.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Calendar className="w-8 h-8 text-slate-400" />
-            </div>
-            <p className="text-slate-500">নির্বাচিত তারিখে কোনো অ্যাপয়েন্টমেন্ট নেই</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {filteredAppointments.map((apt) => (
-              <Card key={apt.id} className="hover:shadow-lg transition-shadow">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="font-semibold text-slate-900">{apt.patientName}</h3>
-                    <p className="text-sm text-slate-500">{apt.patientPhone}</p>
-                  </div>
-                  {apt.status === 'pending' && (apt.displayStatus === 'upcoming' || apt.displayStatus === 'pending') ? (
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">অপেক্ষায়</span>
-                  ) : apt.status === 'confirmed' && (apt.displayStatus === 'upcoming' || apt.displayStatus === 'pending') ? (
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">নিশ্চিত</span>
-                  ) : (
-                    <StatusPill status={apt.displayStatus as any} />
-                  )}
-                </div>
-
-                <div className="flex items-center gap-4 text-sm text-slate-600 mb-4">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-4 h-4" /> {formatDate(apt.date)}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-4 h-4" /> {apt.time_display}
-                  </span>
-                  <span className="flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-md font-mono text-xs">
-                    সিরিয়াল: {(apt.status === 'confirmed' || apt.status === 'completed') && apt.serial_number ? apt.serial_number : '-'}
-                  </span>
-                  <span className={`flex items-center gap-1 ${apt.type === 'teleconsult' ? 'text-purple-600' : ''}`}>
-                    {apt.type === 'teleconsult' && <Video className="w-4 h-4" />}
-                    {apt.type === 'teleconsult' ? 'ভিডিও কল' : 'সরাসরি'}
-                  </span>
-                </div>
-
-                {apt.reason && (
-                  <div className="p-3 bg-slate-50 rounded-lg mb-4">
-                    <p className="text-sm"><span className="font-medium">সমস্যা:</span> {apt.reason}</p>
-                  </div>
-                )}
-
-<div className="flex items-center gap-2">
-                   {apt.status === 'pending' && (apt.displayStatus === 'upcoming' || apt.displayStatus === 'pending') && (
-                     <>
-                       <button
-                         onClick={() => updateStatus(apt.id, 'confirmed')}
-                         className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
-                         title="গ্রহণ"
-                       >
-                         <CheckCircle className="w-5 h-5" />
-                       </button>
-                       <button
-                         onClick={() => updateStatus(apt.id, 'cancelled')}
-                         className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                         title="বাতিল"
-                       >
-                         <X className="w-5 h-5" />
-                       </button>
-                     </>
-                   )}
-                   {apt.status === 'confirmed' && (apt.displayStatus === 'upcoming' || apt.displayStatus === 'pending') && (
-                     <div className="flex items-center gap-2">
-                       {apt.type === 'teleconsult' && (
-                         <button className="btn-primary flex items-center justify-center gap-2 py-2">
-                           <Video className="w-4 h-4" /> কল শুরু
-                         </button>
-                       )}
-                       <button
-                         onClick={() => updateStatus(apt.id, 'completed')}
-                         className="btn-secondary flex items-center justify-center gap-2 py-2"
-                       >
-                         <CheckCircle className="w-4 h-4" /> সম্পন্ন
-                       </button>
-                     </div>
-                   )}
-                   <button
-                     onClick={() => handlePrescribe(apt)}
-                     className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                     title="প্রেসক্রিব"
-                   >
-                     <FileText className="w-4 h-4" /> <span className="hidden sm:inline">প্রেসক্রিব</span>
-                   </button>
-                   <button
-                     onClick={() => handleHistory(apt)}
-                     className="p-2 text-purple-500 hover:bg-purple-50 rounded-lg transition-colors"
-                     title="ইতিহাস"
-                   >
-                     <FileText className="w-4 h-4" /> <span className="hidden sm:inline">ইতিহাস</span>
-                   </button>
-                 </div>
-               </Card>
-             ))}
-           </div>
-         )}
-       </div>
-
-       {/* PRESCRIBE CONFIRM MODAL */}
-       <Modal
-         isOpen={showPrescribeConfirm}
-         onClose={() => setShowPrescribeConfirm(false)}
-         title="প্রেসক্রিব নিশ্চিতকরণ"
-         size="sm"
-       >
-         <div className="space-y-4">
-           <p>আপনি কি রোগী <strong>{prescribePatient?.patient_name}</strong> এর জন্য প্রেসক্রিব পেজে যেতে চান?</p>
-           <div className="flex gap-3">
-              <Button variant="secondary" onClick={() => setShowPrescribeConfirm(false)} className="flex-1">
-                বাতিল
-              </Button>
-              <Button
-                onClick={() => {
-                  window.open(`https://carescriptrx.vercel.app/dashboard/doctor/prescribe?patient_id=${prescribePatient?.patient_id}`, '_blank');
-                  setShowPrescribeConfirm(false);
-                }}
-               className="flex-1"
-             >
-               যেতে চান
-             </Button>
-           </div>
-         </div>
-       </Modal>
-
-        {/* HISTORY MODAL */}
-        <Modal
-          isOpen={showHistoryModal}
-          onClose={() => { setShowHistoryModal(false); setHistoryStep(-1); }}
-          title="রোগী ইতিহাস"
-          size="xl"
-        >
-          <div className="space-y-6">
-            <p className="font-semibold text-lg">{historyPatient?.patient_name} এর জন্য ইতিহাস ফর্ম</p>
-            {historyQuestions.length === 0 ? (
-              <p className="text-slate-500">কোনো প্রশ্ন পাওয়া যায়নি</p>
-            ) : (
-              (() => {
-                const grouped = historyQuestions.reduce((acc: Record<string, any[]>, q: any) => {
-                  const disease = q.disease_name || 'সাধারণ';
-                  if (!acc[disease]) acc[disease] = [];
-                  acc[disease].push(q);
-                  return acc;
-                }, {});
-                const diseaseNames = Object.keys(grouped);
-
-                // --- DISEASE SELECTION SCREEN ---
-                if (historyStep === -1) {
-                  return (
-                    <div className="grid grid-cols-2 gap-3">
-                      {diseaseNames.map((name, idx) => (
-                        <button
-                          key={name}
-                          onClick={() => setHistoryStep(idx)}
-                          className="p-5 rounded-xl border-2 border-slate-200 hover:border-primary-400 hover:bg-primary-50 transition-all text-left"
-                        >
-                          <h4 className="font-bold text-primary-700 text-lg">{name}</h4>
-                          <p className="text-xs text-slate-500 mt-1">{grouped[name].length} টি প্রশ্ন</p>
-                        </button>
-                      ))}
-                    </div>
-                  );
-                }
-
-                // --- QUESTIONS SCREEN ---
-                const currentDisease = diseaseNames[historyStep];
-                const currentQuestions = grouped[currentDisease];
-
-                return (
-                  <>
-                    {/* Disease header */}
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xl font-bold text-primary-700">{currentDisease}</h3>
-                    </div>
-
-                    {/* Questions */}
-                    <div className="space-y-4">
-                      {currentQuestions.map((q: any, qIdx: number) => {
-                        const imgKey = `${q.id}_img`;
-                        const vidKey = `${q.id}_vid`;
-                        const audKey = `${q.id}_aud`;
-                        const uploadBtn = (label: string, key: string, accept: string, icon: any) => (
-                          <div className="space-y-1">
-                            {historyAnswers[key] ? (
-                              <div className="relative inline-block">
-                                {accept.startsWith('image') && <img src={historyAnswers[key]} alt="" className="max-h-28 rounded-lg object-cover" />}
-                                {accept.startsWith('video') && <video src={historyAnswers[key]} controls className="max-h-28 rounded-lg" />}
-                                {accept.startsWith('audio') && <audio src={historyAnswers[key]} controls className="h-10" />}
-                                <button type="button" onClick={() => { const a={...historyAnswers}; delete a[key]; setHistoryAnswers(a); }} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">X</button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-                                  const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
-                                  if (!cloudName || !uploadPreset) { toast.error('Cloudinary কনফিগার করা হয়নি'); return; }
-                                  const openWidget = () => {
-                                    const w = (window as any).cloudinary.createUploadWidget(
-                                      { cloudName, uploadPreset, maxFileSize: 50000000 },
-                                      (e: any, r: any) => { if (!e && r && r.event === 'success') { setHistoryAnswers((p: any) => ({...p, [key]: r.info.secure_url})); toast.success('আপলোড সফল'); } }
-                                    );
-                                    w.open();
-                                  };
-                                  if (!(window as any).cloudinary) {
-                                    const s = document.createElement('script');
-                                    s.src = 'https://upload-widget.cloudinary.com/global/all.js';
-                                    s.onload = openWidget;
-                                    document.body.appendChild(s);
-                                  } else openWidget();
-                                }}
-                                className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-xs font-medium"
-                              >
-                                {icon}
-                                {label}
-                              </button>
-                            )}
-                          </div>
-                        );
-                        return (
-                          <div key={q.id} className="bg-slate-50 rounded-xl p-4 space-y-3">
-                            <div className="flex items-start gap-3">
-                              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">
-                                {qIdx + 1}
-                              </span>
-                              <div className="flex-1 space-y-3">
-                                <label className="text-sm font-semibold text-slate-700">{q.question}</label>
-                                <textarea
-                                  value={historyAnswers[q.id] || ''}
-                                  onChange={(e) => setHistoryAnswers({ ...historyAnswers, [q.id]: e.target.value })}
-                                  className="input w-full min-h-[70px] resize-y"
-                                  placeholder="লিখুন..."
-                                />
-                                <div className="flex flex-wrap gap-2">
-                                  {uploadBtn('ছবি', imgKey, 'image/*', <Upload className="w-3.5 h-3.5" />)}
-                                  {uploadBtn('ভিডিও', vidKey, 'video/*', <Video className="w-3.5 h-3.5" />)}
-                                  {uploadBtn('অডিও', audKey, 'audio/*', <Upload className="w-3.5 h-3.5" />)}
-                                </div>
-                              </div>
+        <Card padding="none">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50/80 border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">সিরিয়াল</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">রোগী</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">মোবাইল নম্বর</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">তারিখ ও সময়</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">ধরন</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">স্ট্যাটাস</th>
+                  <th className="px-4 py-3 text-center font-semibold text-slate-600">সম্পন্ন</th>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-600"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAppointments.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-12 text-center">
+                      <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <Calendar className="w-7 h-7 text-slate-400" />
+                      </div>
+                      <p className="text-slate-500">নির্বাচিত তারিখে কোনো অ্যাপয়েন্টমেন্ট নেই</p>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredAppointments.map((apt, index) => (
+                    <motion.tr key={apt.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <span className="text-slate-400 font-mono text-xs mr-2">{index + 1}</span>
+                        <span className="text-slate-600 font-mono">{(apt.status === 'confirmed' || apt.status === 'completed') && apt.serial_number ? apt.serial_number : '-'}</span>
+                      </td>
+                      <td className="px-4 py-3"><span className="font-medium text-slate-900">{apt.patientName}</span></td>
+                      <td className="px-4 py-3"><div className="text-xs text-slate-500">{apt.patientPhone || '-'}</div></td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2 text-slate-600">
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>{formatDate(apt.date)}</span>
+                          {apt.time && <span className="text-xs text-slate-400">- {formatTime(apt.time)}</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1 text-xs ${apt.type === 'teleconsult' ? 'text-purple-600' : 'text-slate-600'}`}>
+                          {apt.type === 'teleconsult' && <Video className="w-3 h-3" />}
+                          {apt.type === 'teleconsult' ? 'ভিডিও' : 'সরাসরি'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">{getStatusBadge(apt.status, apt.displayStatus)}</td>
+                      <td className="px-4 py-3 text-center">
+                        {apt.status !== 'completed' && apt.status !== 'cancelled' ? (
+                          <button onClick={() => handleComplete(apt)} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors" title="সম্পন্ন করুন">
+                            <CheckCircle className="w-5 h-5" />
+                          </button>
+                        ) : (
+                          <div className="flex justify-center"><CheckCircle className="w-5 h-5 text-emerald-400 opacity-50" /></div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {apt.status !== 'completed' && (
+                            <>
+                              {apt.status === 'pending' && (
+                                <>
+                                  <button onClick={() => handleApprove(apt, apt.status)} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors" title="নিশ্চিত করুন"><Check className="w-4 h-4" /></button>
+                                  <button onClick={() => handleReject(apt)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="বাতিল করুন"><X className="w-4 h-4" /></button>
+                                </>
+                              )}
+                              {apt.status === 'confirmed' && (
+                                <button onClick={() => handleApprove(apt, apt.status)} className="p-2 text-amber-500 hover:bg-amber-50 rounded-lg transition-colors" title="অপেক্ষায় করুন"><Clock className="w-4 h-4" /></button>
+                              )}
+                              {apt.status === 'cancelled' && (
+                                <button onClick={() => handleApprove(apt, apt.status)} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors" title="পুনরুদ্ধার করুন"><Check className="w-4 h-4" /></button>
+                              )}
+                              <button onClick={() => handlePrescribe(apt)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="প্রেসক্রিব"><FileText className="w-4 h-4" /></button>
+                              <button onClick={() => handleHistory(apt)} className="p-2 text-purple-500 hover:bg-purple-50 rounded-lg transition-colors" title="ইতিহাস"><FileText className="w-4 h-4" /></button>
+                            </>
+                          )}
+                          {apt.status === 'completed' && (
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => handlePrescribe(apt)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="প্রেসক্রিব"><FileText className="w-4 h-4" /></button>
+                              <button onClick={() => handleHistory(apt)} className="p-2 text-purple-500 hover:bg-purple-50 rounded-lg transition-colors" title="ইতিহাস"><FileText className="w-4 h-4" /></button>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Navigation */}
-                    <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-                      <Button variant="secondary" onClick={() => setHistoryStep(-1)}>
-                        রোগ নির্বাচন
-                      </Button>
-                      <Button onClick={submitHistoryAnswers}>
-                        সংরক্ষণ করুন
-                      </Button>
-                    </div>
-                  </>
-                );
-              })()
-            )}
+                          )}
+                        </div>
+                      </td>
+                    </motion.tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-        </Modal>
-     </DashboardLayout>
+        </Card>
+      </motion.div>
+
+      <Modal isOpen={showWalkinModal} onClose={() => setShowWalkinModal(false)} title="নতুন অ্যাপয়েন্টমেন্ট">
+        <div className="space-y-5">
+          <div><label className="text-sm font-medium text-slate-600 mb-2 block">রোগীর নাম *</label><input type="text" value={walkinPatient.name} onChange={(e) => setWalkinPatient({...walkinPatient, name: e.target.value})} className="input w-full" placeholder="রোগীর নাম লিখুন" /></div>
+          <div><label className="text-sm font-medium text-slate-600 mb-2 block">ফোন নম্বর</label><input type="tel" value={walkinPatient.phone} onChange={(e) => setWalkinPatient({...walkinPatient, phone: e.target.value})} className="input w-full" placeholder="01XXXXXXXXX" /></div>
+          <div className="grid grid-cols-3 gap-3">
+            <div><label className="text-sm font-medium text-slate-600 mb-2 block">বয়স *</label><input type="number" value={walkinPatient.age} onChange={(e) => setWalkinPatient({...walkinPatient, age: parseInt(e.target.value) || 0})} className="input w-full" /></div>
+            <div><label className="text-sm font-medium text-slate-600 mb-2 block">লিঙ্গ *</label><select value={walkinPatient.sex} onChange={(e) => setWalkinPatient({...walkinPatient, sex: e.target.value as 'male'|'female'|'other'})} className="input w-full"><option value="">লিঙ্গ নির্বাচন করুন</option><option value="male">পুরুষ</option><option value="female">মহিলা</option><option value="other">অন্যান্য</option></select></div>
+            <div><label className="text-sm font-medium text-slate-600 mb-2 block">ওজন (kg)</label><input type="number" value={walkinPatient.weight} onChange={(e) => setWalkinPatient({...walkinPatient, weight: parseFloat(e.target.value) || 0})} className="input w-full" /></div>
+          </div>
+          <div><label className="text-sm font-medium text-slate-600 mb-2 block">ধরন</label>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setWalkinPatient({...walkinPatient, type: 'in-person'})} className={`flex-1 py-2 px-4 rounded-lg border-2 transition-all ${walkinPatient.type === 'in-person' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-slate-200 hover:border-slate-300'}`}>সরাসরি</button>
+              <button type="button" onClick={() => setWalkinPatient({...walkinPatient, type: 'teleconsult'})} className={`flex-1 py-2 px-4 rounded-lg border-2 transition-all ${walkinPatient.type === 'teleconsult' ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 hover:border-slate-300'}`}>ভিডিও কল</button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-sm font-medium text-slate-600 mb-2 block">তারিখ</label><input type="date" value={walkinPatient.date} onChange={(e) => setWalkinPatient({...walkinPatient, date: e.target.value, time: ''})} className="input w-full" /></div>
+            <div>
+              <label className="text-sm font-medium text-slate-600 mb-2 block">সময় *</label>
+              <div className="flex items-center gap-2 mb-2">
+                <button type="button" onClick={() => setSpecialTimePower(!specialTimePower)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${specialTimePower ? 'bg-amber-100 text-amber-700 border border-amber-300' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}><Zap className="w-4 h-4" /> বিশেষ ক্ষমতা ~ সময়</button>
+              </div>
+              {specialTimePower && <div className="text-sm text-amber-600 bg-amber-50 p-2 rounded-lg mb-2">বর্তমান সময় ব্যবহার করা হবে</div>}
+              <input type="time" value={walkinPatient.time} onChange={(e) => setWalkinPatient({...walkinPatient, time: e.target.value})} className="input w-full" disabled={specialTimePower} />
+            </div>
+          </div>
+          <div><label className="text-sm font-medium text-slate-600 mb-2 block">রোগীর সমস্যা লিখুন</label><textarea value={walkinPatient.reason} onChange={(e) => setWalkinPatient({...walkinPatient, reason: e.target.value})} className="input w-full h-24 resize-none" placeholder="রোগীর সমস্যা লিখুন" /></div>
+          <Button onClick={handleAddWalkin} className="w-full" disabled={creatingWalkin}>{creatingWalkin ? 'যোগ হচ্ছে...' : 'অ্যাপয়েন্টমেন্ট যোগ করুন'}</Button>
+        </div>
+      </Modal>
+
+      <Modal isOpen={showQRModal} onClose={() => setShowQRModal(false)} title="অ্যাপয়েন্টমেন্ট QR কোড" size="sm">
+        {qrAppointment && (
+          <div className="space-y-4 text-center">
+            <div className="flex justify-center" id="qr-code-print-area"><QRCode value={`${window.location.origin}/dashboard/patient/appointments?id=${qrAppointment.id}`} size={200} /></div>
+            <div className="space-y-2"><p className="font-semibold">{qrAppointment.patients?.name}</p><p className="text-sm text-slate-500">{formatDate(qrAppointment.date)} - {qrAppointment.time?.substring(0, 5)}</p></div>
+            <Button onClick={() => { const pw = window.open('','_blank'); if(pw) { const qs=document.querySelector('#qr-code-print-area svg'); const sh=qs?qs.outerHTML:''; pw.document.write(`<html><head><title>QR কোড</title></head><body style="text-align:center;padding:20px;font-family:sans-serif;"><h2>ক্লিনিক কানেক্ট - অ্যাপয়েন্টমেন্ট</h2><p>রোগী: ${qrAppointment.patients?.name}</p><p>তারিখ: ${formatDate(qrAppointment.date)}</p><p>সময়: ${qrAppointment.time?.substring(0,5)}</p>${sh}</body></html>`); pw.document.close(); pw.focus(); pw.print(); }}} className="w-full">প্রিন্ট করুন</Button>
+          </div>
+        )}
+      </Modal>
+
+      <Modal isOpen={showPrescribeConfirm} onClose={() => setShowPrescribeConfirm(false)} title="প্রেসক্রিব নিশ্চিতকরণ" size="sm">
+        <div className="space-y-4">
+          <p>আপনি কি রোগী <strong>{prescribePatient?.patient_name}</strong> এর জন্য প্রেসক্রিব পেজে যেতে চান?</p>
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => setShowPrescribeConfirm(false)} className="flex-1">বাতিল</Button>
+            <Button onClick={() => { window.open(`https://carescriptrx.vercel.app/dashboard/doctor/prescribe?patient_id=${prescribePatient?.patient_id}`, '_blank'); setShowPrescribeConfirm(false); }} className="flex-1">যেতে চান</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={showHistoryModal} onClose={() => { setShowHistoryModal(false); setHistoryStep(-1); }} title="রোগী ইতিহাস" size="xl">
+        <div className="space-y-6">
+          <p className="font-semibold text-lg">{historyPatient?.patient_name} এর জন্য ইতিহাস ফর্ম</p>
+          {historyQuestions.length === 0 ? <p className="text-slate-500">কোনো প্রশ্ন পাওয়া যায়নি</p> : (
+            (() => {
+              const grouped = historyQuestions.reduce((acc: Record<string, any[]>, q: any) => { const d = q.disease_name || 'সাধারণ'; if(!acc[d]) acc[d]=[]; acc[d].push(q); return acc; }, {});
+              const diseaseNames = Object.keys(grouped);
+              if (historyStep === -1) return (<div className="grid grid-cols-2 gap-3">{diseaseNames.map((name, idx) => (<button key={name} onClick={() => setHistoryStep(idx)} className="p-5 rounded-xl border-2 border-slate-200 hover:border-primary-400 hover:bg-primary-50 transition-all text-left"><h4 className="font-bold text-primary-700 text-lg">{name}</h4><p className="text-xs text-slate-500 mt-1">{grouped[name].length} টি প্রশ্ন</p></button>))}</div>);
+              const currentDisease = diseaseNames[historyStep];
+              const currentQuestions = grouped[currentDisease];
+              return (<><div className="flex items-center justify-between"><h3 className="text-xl font-bold text-primary-700">{currentDisease}</h3></div><div className="space-y-4">{currentQuestions.map((q: any, qIdx: number) => { const imgKey=`${q.id}_img`; const vidKey=`${q.id}_vid`; const audKey=`${q.id}_aud`; const uploadBtn=(label: string, key: string, accept: string, icon: any) => (<div className="space-y-1">{historyAnswers[key] ? (<div className="relative inline-block">{accept.startsWith('image') && <img src={historyAnswers[key]} alt="" className="max-h-28 rounded-lg object-cover" />}{accept.startsWith('video') && <video src={historyAnswers[key]} controls className="max-h-28 rounded-lg" />}{accept.startsWith('audio') && <audio src={historyAnswers[key]} controls className="h-10" />}<button type="button" onClick={() => { const a={...historyAnswers}; delete a[key]; setHistoryAnswers(a); }} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">X</button></div>) : (<button type="button" onClick={() => { const cn=process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME; const up=process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET; if(!cn||!up){toast.error('Cloudinary কনফিগার করা হয়নি'); return;} const ow=()=>{(window as any).cloudinary.createUploadWidget({cloudName:cn,uploadPreset:up,maxFileSize:50000000},(e:any,r:any)=>{if(!e&&r&&r.event==='success'){setHistoryAnswers((p:any)=>({...p,[key]:r.info.secure_url}));toast.success('আপলোড সফল');}}).open();}; if(!(window as any).cloudinary){const s=document.createElement('script');s.src='https://upload-widget.cloudinary.com/global/all.js';s.onload=ow;document.body.appendChild(s);}else ow();}} className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-xs font-medium">{icon}{label}</button>)}</div>); return (<div key={q.id} className="bg-slate-50 rounded-xl p-4 space-y-3"><div className="flex items-start gap-3"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">{qIdx+1}</span><div className="flex-1 space-y-3"><label className="text-sm font-semibold text-slate-700">{q.question}</label>
+                {q.type === 'multiple_choice' ? (<div className="space-y-2">{(q.options||[]).map((opt: string, oIdx: number) => (<label key={oIdx} className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-primary-300 cursor-pointer transition-all has-[:checked]:bg-primary-50 has-[:checked]:border-primary-400"><input type="radio" name={q.id} value={opt} checked={historyAnswers[q.id]===opt} onChange={(e)=>setHistoryAnswers({...historyAnswers,[q.id]:e.target.value})} className="w-4 h-4 text-primary-600 accent-primary-600"/><span className="text-sm text-slate-700">{opt}</span></label>))}</div>)
+                : q.type === 'checkboxes' ? (<div className="space-y-2">{(q.options||[]).map((opt: string, oIdx: number) => { const checked=(historyAnswers[q.id]||'').split(',').includes(opt); return (<label key={oIdx} className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-primary-300 cursor-pointer transition-all has-[:checked]:bg-primary-50 has-[:checked]:border-primary-400"><input type="checkbox" value={opt} checked={checked} onChange={(e)=>{const c=(historyAnswers[q.id]||'').split(',').filter(Boolean);const u=e.target.checked?[...c,opt]:c.filter((v:string)=>v!==opt);setHistoryAnswers({...historyAnswers,[q.id]:u.join(',')});}} className="w-4 h-4 text-primary-600 rounded accent-primary-600"/><span className="text-sm text-slate-700">{opt}</span></label>);})}</div>)
+                : q.type === 'scale' ? (<div className="space-y-3"><div className="flex items-center justify-between gap-1">{(q.options||[]).map((val: string, oIdx: number) => (<button key={oIdx} type="button" onClick={()=>setHistoryAnswers({...historyAnswers,[q.id]:val})} className={`w-10 h-10 rounded-full text-sm font-medium transition-all ${historyAnswers[q.id]===val?'bg-primary-500 text-white shadow-md shadow-primary-500/30 scale-110':'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{val}</button>))}</div>{q.options&&q.options.length>=2&&<div className="flex justify-between text-xs text-slate-400 px-1"><span>{q.options[0]} - {q.options[q.options.length-1]}</span></div>}</div>)
+                : q.type === 'date' ? <input type="date" value={historyAnswers[q.id]||''} onChange={(e)=>setHistoryAnswers({...historyAnswers,[q.id]:e.target.value})} className="input w-full"/>
+                : q.type === 'time' ? <input type="time" value={historyAnswers[q.id]||''} onChange={(e)=>setHistoryAnswers({...historyAnswers,[q.id]:e.target.value})} className="input w-full"/>
+                : q.type === 'dropdown' ? (<select value={historyAnswers[q.id]||''} onChange={(e)=>setHistoryAnswers({...historyAnswers,[q.id]:e.target.value})} className="input w-full"><option value="">নির্বাচন করুন</option>{(q.options||[]).map((opt: string, oIdx: number) => <option key={oIdx} value={opt}>{opt}</option>)}</select>)
+                : q.type === 'file_upload' ? (<div className="flex flex-wrap gap-2">{uploadBtn('ছবি', imgKey, 'image/*', <Upload className="w-3.5 h-3.5"/>)}{uploadBtn('ভিডিও', vidKey, 'video/*', <Video className="w-3.5 h-3.5"/>)}{uploadBtn('অডিও', audKey, 'audio/*', <Upload className="w-3.5 h-3.5"/>)}</div>)
+                : q.type === 'paragraph' ? <textarea value={historyAnswers[q.id]||''} onChange={(e)=>setHistoryAnswers({...historyAnswers,[q.id]:e.target.value})} className="input w-full min-h-[70px] resize-y" placeholder="লিখুন..."/>
+                : <input type="text" value={historyAnswers[q.id]||''} onChange={(e)=>setHistoryAnswers({...historyAnswers,[q.id]:e.target.value})} className="input w-full" placeholder="লিখুন..."/>}
+              </div></div></div>);})}</div><div className="flex items-center justify-between pt-4 border-t border-slate-200"><Button variant="secondary" onClick={()=>setHistoryStep(-1)}>রোগ নির্বাচন</Button><Button onClick={submitHistoryAnswers}>সংরক্ষণ করুন</Button></div></>);
+            })()
+          )}
+        </div>
+      </Modal>
+    </DashboardLayout>
   );
 }

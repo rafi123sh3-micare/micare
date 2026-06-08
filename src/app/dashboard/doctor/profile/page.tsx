@@ -5,7 +5,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { supabase } from '@/lib/supabase';
-import { User, Phone, Mail, Award, DollarSign, Calendar, Save, X } from 'lucide-react';
+import { User, Phone, Mail, Award, DollarSign, Calendar, Save, X, Eye, EyeOff, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function DoctorProfile() {
@@ -21,6 +21,7 @@ export default function DoctorProfile() {
     degree: '',
     consultation_fee: '',
   });
+  const [showPasscode, setShowPasscode] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('doctorData');
@@ -214,6 +215,30 @@ export default function DoctorProfile() {
               </div>
             </div>
           </div>
+        </Card>
+
+        {/* Security Card */}
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2 mb-4">
+            <Lock className="w-5 h-5 text-slate-600" /> সিকিউরিটি
+          </h3>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+            <input
+              type={showPasscode ? 'text' : 'password'}
+              value={doctorData?.passcode || ''}
+              readOnly
+              className="input pl-11 w-full"
+              placeholder="পাসকোড"
+            />
+            <button
+              onClick={() => setShowPasscode(!showPasscode)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            >
+              {showPasscode ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            </button>
+          </div>
+          <p className="text-xs text-slate-500 mt-2">এটি আপনার লগইন পাসকোড।</p>
         </Card>
 
         {/* Upcoming Appointments */}
