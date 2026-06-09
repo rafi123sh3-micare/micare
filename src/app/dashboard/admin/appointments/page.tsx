@@ -465,18 +465,19 @@ export default function AdminAppointments() {
     setCreatingWalkin(true);
 
 try {
-       // First, create a minimal patient record to satisfy the foreign key constraint
+       // Always create a new patient record for each walk-in (even if name/phone match)
+       const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
        const { data: newPatient, error: patientError } = await supabase
          .from('patients')
          .insert({
            name: walkinPatient.name,
            phone: walkinPatient.phone || '',
-           email: `walkin_${Date.now()}@clinicconnect.local`,
+           email: `walkin_${uniqueSuffix}@clinicconnect.local`,
            password: 'walkin_temp',
            age: walkinPatient.age,
            sex: walkinPatient.sex || 'male',
            weight: walkinPatient.weight,
-            compliant: walkinPatient.compliant || 'false',
+           compliant: walkinPatient.compliant || 'false',
          })
          .select('id')
          .single();

@@ -343,8 +343,10 @@ const statusOrder: Record<string, number> = {
     if (!walkinPatient.name) { toast.error('রোগীর নাম লিখুন'); return; }
     setCreatingWalkin(true);
     try {
+      // Always create a new patient record for each walk-in (even if name/phone match)
+      const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       const { data: newPatient, error: patientError } = await supabase.from('patients').insert({
-        name: walkinPatient.name, phone: walkinPatient.phone || '', email: `walkin_${Date.now()}@clinicconnect.local`,
+        name: walkinPatient.name, phone: walkinPatient.phone || '', email: `walkin_${uniqueSuffix}@clinicconnect.local`,
         password: 'walkin_temp', age: walkinPatient.age, sex: walkinPatient.sex || 'male',
         weight: walkinPatient.weight, compliant: walkinPatient.compliant || 'false',
       }).select('id').single();
