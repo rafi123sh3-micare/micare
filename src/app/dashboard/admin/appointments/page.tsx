@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Search, Filter, Check, X, Calendar, Clock, Video, MoreVertical, ChevronLeft, ChevronRight, ChevronDown, CheckCircle, Plus, Zap, FileText, Upload } from 'lucide-react';
 import { supabase, supabase1, generateSerialNumber } from '@/lib/supabase';
+import { uploadToCloudinary } from '@/lib/cloudinary';
 import { setCache, getCache } from '@/lib/cache';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/Button';
@@ -1363,7 +1364,7 @@ if (aptError) {
                                   input.type = 'file';
                                   input.accept = accept;
                                   const MAX_FILE_SIZE = 50 * 1024 * 1024;
-                                  input.onchange = (e: any) => {
+                                  input.onchange = async (e: any) => {
                                     const file = e.target?.files?.[0];
                                     if (!file) return;
                                     if (file.size > MAX_FILE_SIZE) {
@@ -1376,8 +1377,9 @@ if (aptError) {
                                       toast.error(`অনুগ্রহ করে একটি বৈধ ${typeLabels[expectedType] || expectedType} ফাইল নির্বাচন করুন`);
                                       return;
                                     }
-                                    const reader = new FileReader();
-                                    reader.onload = (ev) => {
+                                    const loadingToastId = toast.loading('আপলোড হচ্ছে...');
+                                    try {
+                                      const url = await uploadToCloudinary(file);
                                       setHistoryAnswers((p: any) => {
                                         const prev = p[key];
                                         let arr: string[] = [];
@@ -1385,11 +1387,14 @@ if (aptError) {
                                           try { const parsed = JSON.parse(prev); arr = Array.isArray(parsed) ? parsed : [prev]; }
                                           catch { arr = [prev]; }
                                         }
-                                        return {...p, [key]: JSON.stringify([...arr, ev.target?.result as string])};
+                                        return {...p, [key]: JSON.stringify([...arr, url])};
                                       });
+                                      toast.dismiss(loadingToastId);
                                       toast.success('আপলোড সফল');
-                                    };
-                                    reader.readAsDataURL(file);
+                                    } catch (err) {
+                                      toast.dismiss(loadingToastId);
+                                      toast.error('আপলোড ব্যর্থ হয়েছে');
+                                    }
                                   };
                                   input.click();
                                 }}
