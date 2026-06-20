@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS public.patients (
 CREATE TABLE IF NOT EXISTS public.admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
-  password TEXT NOT NULL,
+  passcode TEXT NOT NULL,
   name TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -104,9 +104,10 @@ CREATE TABLE IF NOT EXISTS public.schedules (
   end_time TIME NOT NULL,
   selected_days TEXT[] NOT NULL,
   repeat_weekly BOOLEAN DEFAULT FALSE,
+  is_repeating BOOLEAN DEFAULT FALSE,
   start_date DATE,
   end_date DATE,
-  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'confirmed', 'cancelled')),
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'confirmed', 'cancelled', 'rejected')),
   created_by UUID,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -433,7 +434,7 @@ INSERT INTO public.departments (name, description) VALUES
 ON CONFLICT (name) DO NOTHING;
 
 -- 5.2 Default Admin
-INSERT INTO public.admins (email, password, name) VALUES
+INSERT INTO public.admins (email, passcode, name) VALUES
   ('admin@clinic.com', 'admin123', 'System Admin')
 ON CONFLICT (email) DO NOTHING;
 
@@ -462,53 +463,52 @@ INSERT INTO public.patients (name, email, phone, password, age, sex, weight, sta
 ON CONFLICT DO NOTHING;
 
 -- 5.5 Sample Schedules (Rule-Based)
--- Using Bengali weekday names as used in the app
-INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, start_date, status)
+INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, is_repeating, start_date, status)
 SELECT d.id, '09:00', '14:00',
   ARRAY['সোমবার', 'বুধবার', 'শুক্রবার'],
-  TRUE, CURRENT_DATE, 'active'
+  TRUE, TRUE, CURRENT_DATE, 'active'
 FROM public.doctors d WHERE d.name LIKE '%Rahim%' LIMIT 1;
 
-INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, start_date, status)
+INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, is_repeating, start_date, status)
 SELECT d.id, '10:00', '16:00',
   ARRAY['রবিবার', 'মঙ্গলবার', 'বৃহস্পতিবার'],
-  TRUE, CURRENT_DATE, 'active'
+  TRUE, TRUE, CURRENT_DATE, 'active'
 FROM public.doctors d WHERE d.name LIKE '%Fariha%' LIMIT 1;
 
-INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, start_date, status)
+INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, is_repeating, start_date, status)
 SELECT d.id, '08:00', '12:00',
   ARRAY['সোমবার', 'বৃহস্পতিবার', 'শনিবার'],
-  TRUE, CURRENT_DATE, 'active'
+  TRUE, TRUE, CURRENT_DATE, 'active'
 FROM public.doctors d WHERE d.name LIKE '%Karim%' LIMIT 1;
 
-INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, start_date, status)
+INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, is_repeating, start_date, status)
 SELECT d.id, '09:00', '13:00',
   ARRAY['রবিবার', 'বুধবার', 'শুক্রবার'],
-  TRUE, CURRENT_DATE, 'active'
+  TRUE, TRUE, CURRENT_DATE, 'active'
 FROM public.doctors d WHERE d.name LIKE '%Salma%' LIMIT 1;
 
-INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, start_date, status)
+INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, is_repeating, start_date, status)
 SELECT d.id, '11:00', '17:00',
   ARRAY['মঙ্গলবার', 'বুধবার', 'বৃহস্পতিবার'],
-  TRUE, CURRENT_DATE, 'active'
+  TRUE, TRUE, CURRENT_DATE, 'active'
 FROM public.doctors d WHERE d.name LIKE '%Hasan%' LIMIT 1;
 
-INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, start_date, status)
+INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, is_repeating, start_date, status)
 SELECT d.id, '10:00', '15:00',
   ARRAY['সোমবার', 'মঙ্গলবার', 'শনিবার'],
-  TRUE, CURRENT_DATE, 'active'
+  TRUE, TRUE, CURRENT_DATE, 'active'
 FROM public.doctors d WHERE d.name LIKE '%Nurjahan%' LIMIT 1;
 
-INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, start_date, status)
+INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, is_repeating, start_date, status)
 SELECT d.id, '09:00', '14:00',
   ARRAY['রবিবার', 'মঙ্গলবার', 'বৃহস্পতিবার'],
-  TRUE, CURRENT_DATE, 'active'
+  TRUE, TRUE, CURRENT_DATE, 'active'
 FROM public.doctors d WHERE d.name LIKE '%Rafiq%' LIMIT 1;
 
-INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, start_date, status)
+INSERT INTO public.schedules (doctor_id, start_time, end_time, selected_days, repeat_weekly, is_repeating, start_date, status)
 SELECT d.id, '08:00', '13:00',
   ARRAY['সোমবার', 'বুধবার', 'শনিবার'],
-  TRUE, CURRENT_DATE, 'active'
+  TRUE, TRUE, CURRENT_DATE, 'active'
 FROM public.doctors d WHERE d.name LIKE '%Sabina%' LIMIT 1;
 
 -- 5.6 Sample Appointments
@@ -616,7 +616,7 @@ LOGIN CREDENTIALS (after seeding):
 
 Admin:
   - Email: admin@clinic.com
-  - Password: admin123
+  - Passcode: admin123
 
 Doctors (use passcode to login):
   - Dr. Rahim Ahmed    -> passcode: 12345
