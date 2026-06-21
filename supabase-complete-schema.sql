@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS public.patients (
   compliant TEXT,
   status TEXT DEFAULT 'active',
   address TEXT,
+  bcode TEXT UNIQUE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

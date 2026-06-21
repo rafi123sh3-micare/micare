@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Card } from '@/components/ui/Card';
 import { StatusPill } from '@/components/ui/StatusPill';
-import { QRCode } from '@/components/ui/QRCode';
+import { AppointmentSlip } from '@/components/appointments/AppointmentSlip';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import DatePicker from '@/components/ui/DatePicker';
@@ -26,6 +26,7 @@ export default function PatientAppointments() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [patientInfo, setPatientInfo] = useState<any>(null);
   const [showQRModal, setShowQRModal] = useState(false);
 
   const getStatusFromDate = (dateStr: string, currentStatus: string) => {
@@ -42,6 +43,11 @@ export default function PatientAppointments() {
   };
 
   useEffect(() => {
+    const data = JSON.parse(localStorage.getItem('patientData') || 'null');
+    setPatientInfo(data);
+  }, []);
+
+  useEffect(() => {
     async function loadAppointments() {
       if (typeof window === 'undefined') {
         setLoading(false);
@@ -56,7 +62,7 @@ export default function PatientAppointments() {
 
       const { data: apts } = await supabase
         .from('appointments')
-        .select('*, doctors(name, specialization)')
+        .select('*, doctors(name, specialization, degree, specialty)')
         .eq('patient_id', patientData.id)
         .order('date', { ascending: true });
 
@@ -108,6 +114,8 @@ export default function PatientAppointments() {
             doctor: apt.doctors?.name,
             doctorId: apt.doctor_id,
             specialization: apt.doctors?.specialization,
+            doctor_degree: apt.doctors?.degree,
+            doctor_specialty: apt.doctors?.specialty,
             displayStatus: getStatusFromDate(apt.date, apt.status),
             time_range: timeRange,
             scheduleStart
@@ -178,6 +186,47 @@ const statusOrder: Record<string, number> = {
     { value: 'cancelled', label: 'বাতিল' },
     { value: 'completed', label: 'সম্পন্ন' },
   ];
+
+  const handlePrintSlip = async () => {
+    if (!selectedApt) return;
+
+    const pw = window.open('', '_blank');
+    if (!pw) return;
+
+    const pName = (patientInfo?.name || '').replace(/[<>]/g, '');
+    const pGender = (patientInfo?.gender || patientInfo?.sex || '').replace(/[<>]/g, '');
+    const pAge = patientInfo?.age ?? '';
+    const pPhone = (patientInfo?.phone || '-').replace(/[<>]/g, '');
+    const dName = (selectedApt.doctor || '').replace(/[<>]/g, '');
+    const dDegree = (selectedApt.doctor_degree || '').replace(/[<>]/g, '');
+    const dSpecialty = (selectedApt.doctor_specialty || '').replace(/[<>]/g, '');
+    const dCreds = dDegree + (dDegree && dSpecialty ? ', ' : '') + dSpecialty;
+    const pSerial = selectedApt.serial_number || null;
+    const pSerialDisplay = pSerial || '-';
+    const qrValue = selectedApt.patient_id ? `https://carescriptrx.vercel.app/dashboard/doctor/prescribe?patient_id=${selectedApt.patient_id}` : '';
+    pw.document.write(`<html><head><title>Appointment Slip</title><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script><style>body{font-family:sans-serif;padding:30px;max-width:500px;margin:0 auto}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}.details{font-size:14px;margin-bottom:20px}.details div{margin-bottom:6px}.label{font-weight:600;color:#555;display:inline-block;width:100px}.consultant{border-top:1px solid #e2e8f0;padding-top:12px;font-size:14px}.consultant .info{display:inline-block;vertical-align:top}.consultant .name{font-weight:500}.consultant .degree{font-size:13px;color:#666;margin-top:2px;line-height:1.5;word-break:break-word;white-space:pre-line}img.logo{height:64px;width:auto}@media print{body{padding:20px}}</style></head><body><div class="header"><div><div id="qrcode"></div></div><img src="https://iili.io/Cf3Yo8b.png" class="logo" /></div><div class="details"><div><span class="label">Patient Serial:</span>${pSerialDisplay}</div><div><span class="label">Patient Name:</span>${pName}</div><div><span class="label">Gender:</span>${pGender.charAt(0).toUpperCase() + pGender.slice(1)}<span style="margin-left:50px;font-weight:600;color:#555;">Age:</span> ${pAge}</div><div><span class="label">Phone:</span>${pPhone}</div></div><div class="consultant"><span class="label" style="vertical-align:top;">Consultant:</span><div class="info"><div class="name">${dName}</div>${dCreds ? `<div class="degree">${dCreds}</div>` : ''}</div></div><script>new QRCode(document.getElementById("qrcode"),{text:"${qrValue}",width:128,height:128});setTimeout(function(){window.print()},500);<\/script></body></html>`);
+  };
+
+  const handlePrintSlipFromTable = async (apt: any) => {
+    if (!apt) return;
+
+    const pw = window.open('', '_blank');
+    if (!pw) return;
+
+    const pName = (patientInfo?.name || '').replace(/[<>]/g, '');
+    const pGender = (patientInfo?.gender || patientInfo?.sex || '').replace(/[<>]/g, '');
+    const pAge = patientInfo?.age ?? '';
+    const pPhone = (patientInfo?.phone || '-').replace(/[<>]/g, '');
+    const dName = (apt.doctor || '').replace(/[<>]/g, '');
+    const dDegree = (apt.doctor_degree || '').replace(/[<>]/g, '');
+    const dSpecialty = (apt.doctor_specialty || '').replace(/[<>]/g, '');
+    const dCreds = dDegree + (dDegree && dSpecialty ? ', ' : '') + dSpecialty;
+    const pSerial = apt.serial_number || null;
+    const pSerialDisplay = pSerial || '-';
+    const qrValue = apt.patient_id ? `https://carescriptrx.vercel.app/dashboard/doctor/prescribe?patient_id=${apt.patient_id}` : '';
+    pw.document.write(`<html><head><title>Appointment Slip</title><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script><style>body{font-family:sans-serif;padding:30px;max-width:500px;margin:0 auto}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}.details{font-size:14px;margin-bottom:20px}.details div{margin-bottom:6px}.label{font-weight:600;color:#555;display:inline-block;width:100px}.consultant{border-top:1px solid #e2e8f0;padding-top:12px;font-size:14px}.consultant .info{display:inline-block;vertical-align:top}.consultant .name{font-weight:500}.consultant .degree{font-size:13px;color:#666;margin-top:2px;line-height:1.5;word-break:break-word;white-space:pre-line}img.logo{height:64px;width:auto}@media print{body{padding:20px}}</style></head><body><div class="header"><div><div id="qrcode"></div></div><img src="https://iili.io/Cf3Yo8b.png" class="logo" /></div><div class="details"><div><span class="label">Patient Serial:</span>${pSerialDisplay}</div><div><span class="label">Patient Name:</span>${pName}</div><div><span class="label">Gender:</span>${pGender.charAt(0).toUpperCase() + pGender.slice(1)}<span style="margin-left:50px;font-weight:600;color:#555;">Age:</span> ${pAge}</div><div><span class="label">Phone:</span>${pPhone}</div></div><div class="consultant"><span class="label" style="vertical-align:top;">Consultant:</span><div class="info"><div class="name">${dName}</div>${dCreds ? `<div class="degree">${dCreds}</div>` : ''}</div></div><script>new QRCode(document.getElementById("qrcode"),{text:"${qrValue}",width:128,height:128});setTimeout(function(){window.print()},500);<\/script></body></html>`);
+    pw.document.close();
+  };
 
   if (loading) {
     return (
@@ -335,9 +384,19 @@ const statusOrder: Record<string, number> = {
                   </div>
                 )}
 
-                <div className="flex items-center justify-end mt-3 text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <span className="text-sm font-medium">বিস্তারিত</span>
-                  <ChevronRight className="w-4 h-4" />
+                <div className="flex items-center justify-between mt-3">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handlePrintSlipFromTable(apt); }}
+                    className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-primary-600 transition-colors"
+                    title="স্লিপ প্রিন্ট"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span className="text-xs">প্রিন্ট</span>
+                  </button>
+                  <div className="flex items-center text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="text-sm font-medium">বিস্তারিত</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </div>
                 </div>
               </Card>
             ))}
@@ -423,63 +482,22 @@ const statusOrder: Record<string, number> = {
            )}
          </Modal>
 
-         {/* QR CODE MODAL */}
-         <Modal
-           isOpen={showQRModal}
-           onClose={() => setShowQRModal(false)}
-           title="অ্যাপয়েন্টমেন্ট QR কোড"
-           size="sm"
-         >
+         <Modal isOpen={showQRModal} onClose={() => setShowQRModal(false)} title="অ্যাপয়েন্টমেন্ট স্লিপ" size="md">
            {selectedApt && (
-             <div className="space-y-4 text-center">
-               <div className="flex justify-center">
-                 <QRCode value={`${window.location.origin}/dashboard/patient/appointments?id=${selectedApt.id}`} size={200} />
-               </div>
-                <div className="space-y-2">
-                  <p className="font-semibold">{selectedApt.doctor}</p>
-                  <p className="text-sm text-slate-500">{formatDate(selectedApt.date)}</p>
-                   <p className="text-sm text-slate-500">প্রত্যাশিত সময়: <span className="font-mono font-semibold text-primary-600">{selectedApt.serial_number ? calculateExpectedTime(selectedApt.scheduleStart, selectedApt.serial_number) : selectedApt.time_range}</span></p>
-                </div>
-               <Button
-                 onClick={() => {
-                   const printWindow = window.open('', '_blank');
-                   if (printWindow) {
-                     printWindow.document.write(`
-                       <html>
-                         <head>
-                           <title>অ্যাপয়েন্টমেন্ট QR কোড</title>
-                           <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-                           <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-                           <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-                         </head>
-                         <body style="text-align:center;padding:20px;">
-                           <h2>ক্লিনিক কানেক্ট - অ্যাপয়েন্টমেন্ট</h2>
-                           <p>ডাক্তার: ${selectedApt.doctor}</p>
-                           <p>তারিখ: ${formatDate(selectedApt.date)}</p>
-                            <p>সময়: ${selectedApt.serial_number ? calculateExpectedTime(selectedApt.scheduleStart, selectedApt.serial_number) : selectedApt.time_range}</p>
-                           <div id="qrcode"></div>
-                           <script type="text/babel">
-                             const QrCode = window.QRCodeSVG.default || window.QRCodeSVG;
-                             ReactDOM.render(
-                               React.createElement(QrCode, {
-                                 value: '${window.location.origin}/dashboard/patient/appointments?id=${selectedApt.id}',
-                                 size: 200
-                               }),
-                               document.getElementById('qrcode')
-                             );
-                           </script>
-                         </body>
-                       </html>
-                     `);
-                     printWindow.document.close();
-                     printWindow.focus();
-                     printWindow.print();
-                   }
-                 }}
-                 className="w-full"
-               >
-                 প্রিন্ট করুন
-               </Button>
+             <div className="space-y-4">
+               <AppointmentSlip
+                 patientId={selectedApt.patient_id}
+                 patientSerial={selectedApt.serial_number}
+                 appointmentDate={selectedApt.date}
+                 patientName={patientInfo?.name || ''}
+                 patientGender={patientInfo?.gender || patientInfo?.sex || ''}
+                 patientAge={patientInfo?.age ?? ''}
+                 patientPhone={patientInfo?.phone || ''}
+                  doctorName={selectedApt.doctor || ''}
+                  doctorDegree={selectedApt.doctor_degree || ''}
+                  doctorSpecialty={selectedApt.doctor_specialty || ''}
+                />
+               <Button onClick={handlePrintSlip} className="w-full">প্রিন্ট করুন</Button>
              </div>
            )}
          </Modal>

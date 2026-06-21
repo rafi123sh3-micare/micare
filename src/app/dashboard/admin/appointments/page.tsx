@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Search, Filter, Check, X, Calendar, Clock, Video, MoreVertical, ChevronLeft, ChevronRight, ChevronDown, CheckCircle, Plus, Zap, FileText, Upload } from 'lucide-react';
+import { Search, Filter, Check, X, Calendar, Clock, Video, MoreVertical, ChevronLeft, ChevronRight, ChevronDown, CheckCircle, Plus, Zap, FileText, Upload, Printer } from 'lucide-react';
 import { supabase, supabase1, generateSerialNumber } from '@/lib/supabase';
 import { uploadToCloudinary } from '@/lib/cloudinary';
 import { setCache, getCache } from '@/lib/cache';
@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { StatusPill } from '@/components/ui/StatusPill';
-import { QRCode } from '@/components/ui/QRCode';
+import { AppointmentSlip } from '@/components/appointments/AppointmentSlip';
 import { sendNotification, requestPushPermission } from '@/lib/notifications';
 import { sendSMS, buildConfirmationSMS } from '@/lib/sms';
 import DatePicker from '@/components/ui/DatePicker';
@@ -865,6 +865,37 @@ if (aptError) {
     }
   };
 
+  const handlePrintSlip = async (apt: any) => {
+    if (!apt) return;
+
+    const pw = window.open('', '_blank');
+    if (!pw) return;
+
+    const pid = apt.patient_id;
+    const pName = (apt.patients?.name || '').replace(/[<>]/g, '');
+    const pGender = (apt.patients?.sex || '').replace(/[<>]/g, '');
+    const pAge = apt.patients?.age ?? '';
+    const pPhone = (apt.patients?.phone || '-').replace(/[<>]/g, '');
+    const dName = (apt.doctors?.name || '').replace(/[<>]/g, '');
+    const dDegree = (apt.doctors?.degree || '').replace(/[<>]/g, '');
+    const dSpecialty = (apt.doctors?.specialty || '').replace(/[<>]/g, '');
+    const dCreds = dDegree + (dDegree && dSpecialty ? ', ' : '') + dSpecialty;
+    const pSerial = apt.serial_number || null;
+    const pSerialDisplay = pSerial || '-';
+    const qrValue = apt.patient_id ? `https://carescriptrx.vercel.app/dashboard/doctor/prescribe?patient_id=${apt.patient_id}` : '';
+    pw.document.write(`<html><head><title>Appointment Slip</title><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script><style>body{font-family:sans-serif;padding:30px;max-width:500px;margin:0 auto}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}.details{font-size:14px;margin-bottom:20px}.details div{margin-bottom:6px}.label{font-weight:600;color:#555;display:inline-block;width:100px}.consultant{border-top:1px solid #e2e8f0;padding-top:12px;font-size:14px}.consultant .info{display:inline-block;vertical-align:top}.consultant .name{font-weight:500}.consultant .degree{font-size:13px;color:#666;margin-top:2px;line-height:1.5;word-break:break-word;white-space:pre-line}img.logo{height:64px;width:auto}@media print{body{padding:20px}}</style></head><body><div class="header"><div><div id="qrcode"></div></div><img src="https://iili.io/Cf3Yo8b.png" class="logo" /></div><div class="details"><div><span class="label">Patient Serial:</span>${pSerialDisplay}</div><div><span class="label">Patient Name:</span>${pName}</div><div><span class="label">Gender:</span>${pGender.charAt(0).toUpperCase() + pGender.slice(1)}<span style="margin-left:50px;font-weight:600;color:#555;">Age:</span> ${pAge}</div><div><span class="label">Phone:</span>${pPhone}</div></div><div class="consultant"><span class="label" style="vertical-align:top;">Consultant:</span><div class="info"><div class="name">${dName}</div>${dCreds ? `<div class="degree">${dCreds}</div>` : ''}</div></div><script>new QRCode(document.getElementById("qrcode"),{text:"${qrValue}",width:128,height:128});setTimeout(function(){window.print()},500);<\/script></body></html>`);
+    pw.document.close();
+  };
+
+  const handlePrintSlipFromTable = async (apt: any) => {
+    const { data } = await supabase
+      .from('appointments')
+      .select('*, patients(*), doctors(*)')
+      .eq('id', apt.id)
+      .single();
+    if (data) handlePrintSlip(data);
+  };
+
   if (loading) {
     return (
       <DashboardLayout role="admin">
@@ -1086,25 +1117,39 @@ if (aptError) {
                                  title="ইতিহাস"
                                >
                                  <FileText className="w-4 h-4" />
-                               </button>
-                             </>
-                           )}
-                           {apt.status === 'completed' && (
-                             <div className="flex items-center justify-end gap-1">
-                               <button
-                                 onClick={() => handlePrescribe(apt)}
-                                 className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                                 title="প্রেসক্রিব"
-                               >
-                                 <FileText className="w-4 h-4" />
-                               </button>
-                               <button
-                                 onClick={() => handleHistory(apt)}
-                                 className="p-2 text-purple-500 hover:bg-purple-50 rounded-lg transition-colors"
-                                 title="ইতিহাস"
-                               >
-                                 <FileText className="w-4 h-4" />
-                               </button>
+                                </button>
+                                <button
+                                  onClick={() => handlePrintSlipFromTable(apt)}
+                                  className="p-2 text-slate-500 hover:bg-slate-50 rounded-lg transition-colors"
+                                  title="স্লিপ প্রিন্ট"
+                                >
+                                  <Printer className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
+                            {apt.status === 'completed' && (
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  onClick={() => handlePrescribe(apt)}
+                                  className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                                  title="প্রেসক্রিব"
+                                >
+                                  <FileText className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleHistory(apt)}
+                                  className="p-2 text-purple-500 hover:bg-purple-50 rounded-lg transition-colors"
+                                  title="ইতিহাস"
+                                >
+                                  <FileText className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handlePrintSlipFromTable(apt)}
+                                  className="p-2 text-slate-500 hover:bg-slate-50 rounded-lg transition-colors"
+                                  title="স্লিপ প্রিন্ট"
+                                >
+                                  <Printer className="w-4 h-4" />
+                                </button>
                              </div>
                            )}
                          </div>
@@ -1298,50 +1343,22 @@ if (aptError) {
         </div>
       </Modal>
 
-      {/* QR CODE MODAL */}
-      <Modal
-        isOpen={showQRModal}
-        onClose={() => setShowQRModal(false)}
-        title="অ্যাপয়েন্টমেন্ট QR কোড"
-        size="sm"
-      >
+      <Modal isOpen={showQRModal} onClose={() => setShowQRModal(false)} title="অ্যাপয়েন্টমেন্ট স্লিপ" size="md">
         {qrAppointment && (
-          <div className="space-y-4 text-center">
-            <div className="flex justify-center" id="qr-code-print-area">
-              <QRCode value={`${window.location.origin}/dashboard/patient/appointments?id=${qrAppointment.id}`} size={200} />
-            </div>
-            <div className="space-y-2">
-              <p className="font-semibold">{qrAppointment.patients?.name}</p>
-              <p className="text-sm text-slate-500">{formatDate(qrAppointment.date)}</p>
-            </div>
-              <Button
-                  onClick={() => {
-                    const printWindow = window.open('', '_blank');
-                    if (printWindow) {
-                      const qrSvg = document.querySelector('#qr-code-print-area svg');
-                      const svgHtml = qrSvg ? qrSvg.outerHTML : '';
-                      printWindow.document.write(`
-                        <html>
-                          <head>
-                            <title>অ্যাপয়েন্টমেন্ট QR কোড</title>
-                          </head>
-                          <body style="text-align:center;padding:20px;font-family:sans-serif;">
-                            <h2>ক্লিনিক কানেক্ট - অ্যাপয়েন্টমেন্ট</h2>
-                            <p>রোগী: ${qrAppointment.patients?.name}</p>
-                            <p>তারিখ: ${formatDate(qrAppointment.date)}</p>
-                            ${svgHtml}
-                          </body>
-                        </html>
-                      `);
-                      printWindow.document.close();
-                      printWindow.focus();
-                      printWindow.print();
-                    }
-                  }}
-                  className="w-full"
-                >
-                  প্রিন্ট করুন
-                </Button>
+          <div className="space-y-4">
+            <AppointmentSlip
+              patientId={qrAppointment.patient_id}
+              patientSerial={qrAppointment.serial_number}
+              appointmentDate={qrAppointment.date}
+              patientName={qrAppointment.patients?.name || ''}
+              patientGender={qrAppointment.patients?.sex || ''}
+              patientAge={qrAppointment.patients?.age ?? ''}
+              patientPhone={qrAppointment.patients?.phone || ''}
+              doctorName={qrAppointment.doctors?.name || ''}
+              doctorDegree={qrAppointment.doctors?.degree || ''}
+              doctorSpecialty={qrAppointment.doctors?.specialty || ''}
+            />
+            <Button onClick={() => handlePrintSlip(qrAppointment)} className="w-full">প্রিন্ট করুন</Button>
           </div>
         )}
       </Modal>
