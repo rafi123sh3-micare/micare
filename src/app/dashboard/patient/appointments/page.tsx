@@ -190,6 +190,15 @@ const statusOrder: Record<string, number> = {
   const handlePrintSlip = async () => {
     if (!selectedApt) return;
 
+    let bcode = patientInfo?.bcode || '';
+    if (!bcode && selectedApt.patient_id) {
+      try {
+        const r = await fetch(`/api/gen-bcode?patient_id=${selectedApt.patient_id}`);
+        const d = await r.json();
+        if (d.code) bcode = d.code;
+      } catch {}
+    }
+
     const pw = window.open('', '_blank');
     if (!pw) return;
 
@@ -203,12 +212,20 @@ const statusOrder: Record<string, number> = {
     const dCreds = dDegree + (dDegree && dSpecialty ? ', ' : '') + dSpecialty;
     const pSerial = selectedApt.serial_number || null;
     const pSerialDisplay = pSerial || '-';
-    const qrValue = selectedApt.patient_id ? `https://carescriptrx.vercel.app/dashboard/doctor/prescribe?patient_id=${selectedApt.patient_id}` : '';
-    pw.document.write(`<html><head><title>Appointment Slip</title><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script><style>body{font-family:sans-serif;padding:30px;max-width:500px;margin:0 auto}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}.details{font-size:14px;margin-bottom:20px}.details div{margin-bottom:6px}.label{font-weight:600;color:#555;display:inline-block;width:100px}.consultant{border-top:1px solid #e2e8f0;padding-top:12px;font-size:14px}.consultant .info{display:inline-block;vertical-align:top}.consultant .name{font-weight:500}.consultant .degree{font-size:13px;color:#666;margin-top:2px;line-height:1.5;word-break:break-word;white-space:pre-line}img.logo{height:64px;width:auto}@media print{body{padding:20px}}</style></head><body><div class="header"><div><div id="qrcode"></div></div><img src="https://iili.io/Cf3Yo8b.png" class="logo" /></div><div class="details"><div><span class="label">Patient Serial:</span>${pSerialDisplay}</div><div><span class="label">Patient Name:</span>${pName}</div><div><span class="label">Gender:</span>${pGender.charAt(0).toUpperCase() + pGender.slice(1)}<span style="margin-left:50px;font-weight:600;color:#555;">Age:</span> ${pAge}</div><div><span class="label">Phone:</span>${pPhone}</div></div><div class="consultant"><span class="label" style="vertical-align:top;">Consultant:</span><div class="info"><div class="name">${dName}</div>${dCreds ? `<div class="degree">${dCreds}</div>` : ''}</div></div><script>new QRCode(document.getElementById("qrcode"),{text:"${qrValue}",width:128,height:128});setTimeout(function(){window.print()},500);<\/script></body></html>`);
+    pw.document.write(`<html><head><title>Appointment Slip</title><script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.3/dist/JsBarcode.all.min.js"><\/script><style>body{font-family:sans-serif;padding:30px;max-width:500px;margin:0 auto}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}.details{font-size:14px;margin-bottom:20px}.details div{margin-bottom:6px}.label{font-weight:600;color:#555;display:inline-block;width:100px}.consultant{border-top:1px solid #e2e8f0;padding-top:12px;font-size:14px}.consultant .info{display:inline-block;vertical-align:top}.consultant .name{font-weight:500}.consultant .degree{font-size:13px;color:#666;margin-top:2px;line-height:1.5;word-break:break-word;white-space:pre-line}img.logo{height:64px;width:auto}@media print{body{padding:20px}}</style></head><body><div class="header"><div><svg id="barcode"></svg></div><img src="https://iili.io/Cf3Yo8b.png" class="logo" /></div><div class="details"><div><span class="label">Patient Serial:</span>${pSerialDisplay}</div><div><span class="label">Patient Name:</span>${pName}</div><div><span class="label">Gender:</span>${pGender.charAt(0).toUpperCase() + pGender.slice(1)}<span style="margin-left:50px;font-weight:600;color:#555;">Age:</span> ${pAge}</div><div><span class="label">Phone:</span>${pPhone}</div></div><div class="consultant"><span class="label" style="vertical-align:top;">Consultant:</span><div class="info"><div class="name">${dName}</div>${dCreds ? `<div class="degree">${dCreds}</div>` : ''}</div></div><script>${bcode ? `JsBarcode("#barcode","${bcode}",{format:"CODE128",width:1.5,height:50,displayValue:false,margin:5});` : ''}setTimeout(function(){window.print()},500);<\/script></body></html>`);
   };
 
   const handlePrintSlipFromTable = async (apt: any) => {
     if (!apt) return;
+
+    let bcode = patientInfo?.bcode || '';
+    if (!bcode && apt.patient_id) {
+      try {
+        const r = await fetch(`/api/gen-bcode?patient_id=${apt.patient_id}`);
+        const d = await r.json();
+        if (d.code) bcode = d.code;
+      } catch {}
+    }
 
     const pw = window.open('', '_blank');
     if (!pw) return;
@@ -223,8 +240,7 @@ const statusOrder: Record<string, number> = {
     const dCreds = dDegree + (dDegree && dSpecialty ? ', ' : '') + dSpecialty;
     const pSerial = apt.serial_number || null;
     const pSerialDisplay = pSerial || '-';
-    const qrValue = apt.patient_id ? `https://carescriptrx.vercel.app/dashboard/doctor/prescribe?patient_id=${apt.patient_id}` : '';
-    pw.document.write(`<html><head><title>Appointment Slip</title><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script><style>body{font-family:sans-serif;padding:30px;max-width:500px;margin:0 auto}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}.details{font-size:14px;margin-bottom:20px}.details div{margin-bottom:6px}.label{font-weight:600;color:#555;display:inline-block;width:100px}.consultant{border-top:1px solid #e2e8f0;padding-top:12px;font-size:14px}.consultant .info{display:inline-block;vertical-align:top}.consultant .name{font-weight:500}.consultant .degree{font-size:13px;color:#666;margin-top:2px;line-height:1.5;word-break:break-word;white-space:pre-line}img.logo{height:64px;width:auto}@media print{body{padding:20px}}</style></head><body><div class="header"><div><div id="qrcode"></div></div><img src="https://iili.io/Cf3Yo8b.png" class="logo" /></div><div class="details"><div><span class="label">Patient Serial:</span>${pSerialDisplay}</div><div><span class="label">Patient Name:</span>${pName}</div><div><span class="label">Gender:</span>${pGender.charAt(0).toUpperCase() + pGender.slice(1)}<span style="margin-left:50px;font-weight:600;color:#555;">Age:</span> ${pAge}</div><div><span class="label">Phone:</span>${pPhone}</div></div><div class="consultant"><span class="label" style="vertical-align:top;">Consultant:</span><div class="info"><div class="name">${dName}</div>${dCreds ? `<div class="degree">${dCreds}</div>` : ''}</div></div><script>new QRCode(document.getElementById("qrcode"),{text:"${qrValue}",width:128,height:128});setTimeout(function(){window.print()},500);<\/script></body></html>`);
+    pw.document.write(`<html><head><title>Appointment Slip</title><script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.3/dist/JsBarcode.all.min.js"><\/script><style>body{font-family:sans-serif;padding:30px;max-width:500px;margin:0 auto}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}.details{font-size:14px;margin-bottom:20px}.details div{margin-bottom:6px}.label{font-weight:600;color:#555;display:inline-block;width:100px}.consultant{border-top:1px solid #e2e8f0;padding-top:12px;font-size:14px}.consultant .info{display:inline-block;vertical-align:top}.consultant .name{font-weight:500}.consultant .degree{font-size:13px;color:#666;margin-top:2px;line-height:1.5;word-break:break-word;white-space:pre-line}img.logo{height:64px;width:auto}@media print{body{padding:20px}}</style></head><body><div class="header"><div><svg id="barcode"></svg></div><img src="https://iili.io/Cf3Yo8b.png" class="logo" /></div><div class="details"><div><span class="label">Patient Serial:</span>${pSerialDisplay}</div><div><span class="label">Patient Name:</span>${pName}</div><div><span class="label">Gender:</span>${pGender.charAt(0).toUpperCase() + pGender.slice(1)}<span style="margin-left:50px;font-weight:600;color:#555;">Age:</span> ${pAge}</div><div><span class="label">Phone:</span>${pPhone}</div></div><div class="consultant"><span class="label" style="vertical-align:top;">Consultant:</span><div class="info"><div class="name">${dName}</div>${dCreds ? `<div class="degree">${dCreds}</div>` : ''}</div></div><script>${bcode ? `JsBarcode("#barcode","${bcode}",{format:"CODE128",width:1.5,height:50,displayValue:false,margin:5});` : ''}setTimeout(function(){window.print()},500);<\/script></body></html>`);
     pw.document.close();
   };
 
@@ -486,17 +502,18 @@ const statusOrder: Record<string, number> = {
            {selectedApt && (
              <div className="space-y-4">
                <AppointmentSlip
-                 patientId={selectedApt.patient_id}
-                 patientSerial={selectedApt.serial_number}
-                 appointmentDate={selectedApt.date}
-                 patientName={patientInfo?.name || ''}
-                 patientGender={patientInfo?.gender || patientInfo?.sex || ''}
-                 patientAge={patientInfo?.age ?? ''}
-                 patientPhone={patientInfo?.phone || ''}
-                  doctorName={selectedApt.doctor || ''}
-                  doctorDegree={selectedApt.doctor_degree || ''}
-                  doctorSpecialty={selectedApt.doctor_specialty || ''}
-                />
+                  patientId={selectedApt.patient_id}
+                  patientSerial={selectedApt.serial_number}
+                  appointmentDate={selectedApt.date}
+                  patientName={patientInfo?.name || ''}
+                  patientGender={patientInfo?.gender || patientInfo?.sex || ''}
+                  patientAge={patientInfo?.age ?? ''}
+                  patientPhone={patientInfo?.phone || ''}
+                  patientBcode={patientInfo?.bcode || ''}
+                   doctorName={selectedApt.doctor || ''}
+                   doctorDegree={selectedApt.doctor_degree || ''}
+                   doctorSpecialty={selectedApt.doctor_specialty || ''}
+                 />
                <Button onClick={handlePrintSlip} className="w-full">প্রিন্ট করুন</Button>
              </div>
            )}

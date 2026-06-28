@@ -669,8 +669,17 @@ if (aptError) {
        return;
      }
 
-     // Show QR code modal after successful creation
-     const { data: createdApt } = await supabase
+      // Generate bcode if not exists, so it's ready when modal opens
+      if (!walkinPatient.bcode && newPatient?.id) {
+        try {
+          const bRes = await fetch(`/api/gen-bcode?patient_id=${newPatient.id}`);
+          const bData = await bRes.json();
+          if (bData.code) walkinPatient.bcode = bData.code;
+        } catch {}
+      }
+
+      // Show QR code modal after successful creation
+      const { data: createdApt } = await supabase
        .from('appointments')
        .select('*, patients(*), doctors(*)')
        .eq('patient_id', newPatient.id)
@@ -868,10 +877,18 @@ if (aptError) {
   const handlePrintSlip = async (apt: any) => {
     if (!apt) return;
 
+    let bcode = apt.patients?.bcode || '';
+    if (!bcode && apt.patient_id) {
+      try {
+        const r = await fetch(`/api/gen-bcode?patient_id=${apt.patient_id}`);
+        const d = await r.json();
+        if (d.code) bcode = d.code;
+      } catch {}
+    }
+
     const pw = window.open('', '_blank');
     if (!pw) return;
 
-    const pid = apt.patient_id;
     const pName = (apt.patients?.name || '').replace(/[<>]/g, '');
     const pGender = (apt.patients?.sex || '').replace(/[<>]/g, '');
     const pAge = apt.patients?.age ?? '';
@@ -882,8 +899,7 @@ if (aptError) {
     const dCreds = dDegree + (dDegree && dSpecialty ? ', ' : '') + dSpecialty;
     const pSerial = apt.serial_number || null;
     const pSerialDisplay = pSerial || '-';
-    const qrValue = apt.patient_id ? `https://carescriptrx.vercel.app/dashboard/doctor/prescribe?patient_id=${apt.patient_id}` : '';
-    pw.document.write(`<html><head><title>Appointment Slip</title><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script><style>body{font-family:sans-serif;padding:30px;max-width:500px;margin:0 auto}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}.details{font-size:14px;margin-bottom:20px}.details div{margin-bottom:6px}.label{font-weight:600;color:#555;display:inline-block;width:100px}.consultant{border-top:1px solid #e2e8f0;padding-top:12px;font-size:14px}.consultant .info{display:inline-block;vertical-align:top}.consultant .name{font-weight:500}.consultant .degree{font-size:13px;color:#666;margin-top:2px;line-height:1.5;word-break:break-word;white-space:pre-line}img.logo{height:64px;width:auto}@media print{body{padding:20px}}</style></head><body><div class="header"><div><div id="qrcode"></div></div><img src="https://iili.io/Cf3Yo8b.png" class="logo" /></div><div class="details"><div><span class="label">Patient Serial:</span>${pSerialDisplay}</div><div><span class="label">Patient Name:</span>${pName}</div><div><span class="label">Gender:</span>${pGender.charAt(0).toUpperCase() + pGender.slice(1)}<span style="margin-left:50px;font-weight:600;color:#555;">Age:</span> ${pAge}</div><div><span class="label">Phone:</span>${pPhone}</div></div><div class="consultant"><span class="label" style="vertical-align:top;">Consultant:</span><div class="info"><div class="name">${dName}</div>${dCreds ? `<div class="degree">${dCreds}</div>` : ''}</div></div><script>new QRCode(document.getElementById("qrcode"),{text:"${qrValue}",width:128,height:128});setTimeout(function(){window.print()},500);<\/script></body></html>`);
+    pw.document.write(`<html><head><title>Appointment Slip</title><script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.3/dist/JsBarcode.all.min.js"><\/script><style>body{font-family:sans-serif;padding:30px;max-width:500px;margin:0 auto}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}.details{font-size:14px;margin-bottom:20px}.details div{margin-bottom:6px}.label{font-weight:600;color:#555;display:inline-block;width:100px}.consultant{border-top:1px solid #e2e8f0;padding-top:12px;font-size:14px}.consultant .info{display:inline-block;vertical-align:top}.consultant .name{font-weight:500}.consultant .degree{font-size:13px;color:#666;margin-top:2px;line-height:1.5;word-break:break-word;white-space:pre-line}img.logo{height:64px;width:auto}@media print{body{padding:20px}}</style></head><body><div class="header"><div><svg id="barcode"></svg></div><img src="https://iili.io/Cf3Yo8b.png" class="logo" /></div><div class="details"><div><span class="label">Patient Serial:</span>${pSerialDisplay}</div><div><span class="label">Patient Name:</span>${pName}</div><div><span class="label">Gender:</span>${pGender.charAt(0).toUpperCase() + pGender.slice(1)}<span style="margin-left:50px;font-weight:600;color:#555;">Age:</span> ${pAge}</div><div><span class="label">Phone:</span>${pPhone}</div></div><div class="consultant"><span class="label" style="vertical-align:top;">Consultant:</span><div class="info"><div class="name">${dName}</div>${dCreds ? `<div class="degree">${dCreds}</div>` : ''}</div></div><script>${bcode ? `JsBarcode("#barcode","${bcode}",{format:"CODE128",width:1.5,height:50,displayValue:false,margin:5});` : ''}setTimeout(function(){window.print()},500);<\/script></body></html>`);
     pw.document.close();
   };
 
@@ -1354,6 +1370,7 @@ if (aptError) {
               patientGender={qrAppointment.patients?.sex || ''}
               patientAge={qrAppointment.patients?.age ?? ''}
               patientPhone={qrAppointment.patients?.phone || ''}
+              patientBcode={qrAppointment.patients?.bcode || ''}
               doctorName={qrAppointment.doctors?.name || ''}
               doctorDegree={qrAppointment.doctors?.degree || ''}
               doctorSpecialty={qrAppointment.doctors?.specialty || ''}

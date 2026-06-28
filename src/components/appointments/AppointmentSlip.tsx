@@ -1,9 +1,10 @@
 'use client';
 
-import { QRCodeSVG } from 'qrcode.react';
+import { useRef, useEffect, useState } from 'react';
+import JsBarcode from 'jsbarcode';
 
 interface AppointmentSlipProps {
-  patientId: string;
+  patientId?: string;
   patientSerial?: string;
   appointmentDate?: string;
   patientName: string;
@@ -13,12 +14,12 @@ interface AppointmentSlipProps {
   doctorName: string;
   doctorDegree?: string;
   doctorSpecialty?: string;
+  patientBcode?: string;
 }
 
 export function AppointmentSlip({
   patientId,
   patientSerial,
-  appointmentDate,
   patientName,
   patientGender,
   patientAge,
@@ -26,21 +27,42 @@ export function AppointmentSlip({
   doctorName,
   doctorDegree,
   doctorSpecialty,
+  patientBcode: initialBcode,
 }: AppointmentSlipProps) {
-  const qrValue = patientId
-    ? `https://carescriptrx.vercel.app/dashboard/doctor/prescribe?patient_id=${patientId}`
-    : '';
+  const barcodeRef = useRef<SVGSVGElement>(null);
+  const [bcode, setBcode] = useState(initialBcode || '');
+
+  useEffect(() => {
+    if (initialBcode) {
+      setBcode(initialBcode);
+    } else if (patientId) {
+      fetch(`/api/gen-bcode?patient_id=${patientId}`)
+        .then(r => r.json())
+        .then(d => { if (d.code) setBcode(d.code); })
+        .catch(() => {});
+    }
+  }, [initialBcode, patientId]);
+
+  useEffect(() => {
+    if (barcodeRef.current && bcode) {
+      JsBarcode(barcodeRef.current, bcode, {
+        format: 'CODE128',
+        width: 1.5,
+        height: 50,
+        displayValue: false,
+        margin: 5,
+      });
+    }
+  }, [bcode]);
 
   return (
     <div className="bg-white rounded-xl p-6 space-y-5" id="appointment-slip">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-shrink-0 bg-white p-2 rounded-lg border border-slate-100">
-          {qrValue && (
-            <QRCodeSVG
-              value={qrValue}
-              size={128}
-            />
-          )}
+          <div className="flex flex-col items-center gap-1">
+            <svg ref={barcodeRef} />
+            
+          </div>
         </div>
         <div className="flex-shrink-0">
           <img
