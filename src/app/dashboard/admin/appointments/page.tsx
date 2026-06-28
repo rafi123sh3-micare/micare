@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Search, Filter, Check, X, Calendar, Clock, Video, MoreVertical, ChevronLeft, ChevronRight, ChevronDown, CheckCircle, Plus, Zap, FileText, Upload, Printer } from 'lucide-react';
+import { Search, Filter, Check, X, Calendar, Clock, Video, MoreVertical, ChevronLeft, ChevronRight, ChevronDown, CheckCircle, Plus, Zap, FileText, Upload, Printer, Scan } from 'lucide-react';
+import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
+import { BarcodeScannerInput } from '@/components/ui/BarcodeScannerInput';
 import { supabase, supabase1, generateSerialNumber } from '@/lib/supabase';
 import { uploadToCloudinary } from '@/lib/cloudinary';
 import { setCache, getCache } from '@/lib/cache';
@@ -136,6 +138,7 @@ export default function AdminAppointments() {
     time: '',
     reason: '',
     compliant: '',
+    bcode: '',
   });
   const [creatingWalkin, setCreatingWalkin] = useState(false);
   const [specialTimePower, setSpecialTimePower] = useState(false);
@@ -581,6 +584,33 @@ export default function AdminAppointments() {
     }
   };
 
+  const handleBarcodePatient = useCallback((patient: any) => {
+    if (patient?.name) {
+      setSearch(patient.name);
+      toast.success(`${patient.name} এর ফলাফল দেখানো হয়েছে`);
+    }
+  }, []);
+
+  const handleBarcodeClear = useCallback(() => {
+    setSearch('');
+  }, []);
+
+  useBarcodeScanner({
+    onScan: async (code) => {
+      const { supabase } = await import('@/lib/supabase');
+      const { data: patient } = await supabase
+        .from('patients')
+        .select('id, name, phone, age, bcode')
+        .eq('bcode', code)
+        .maybeSingle();
+      if (patient) {
+        handleBarcodePatient(patient);
+      } else {
+        toast.error('কোনো রোগী খুঁজে পাওয়া যায়নি');
+      }
+    },
+  });
+
   const handleComplete = async (apt: any) => {
     const { error } = await supabase
       .from('appointments')
@@ -744,7 +774,7 @@ if (aptError) {
         console.error('Walkin SMS error:', e);
       }
      setShowWalkinModal(false);
-      setWalkinPatient({ name: '', phone: '', age: 0, sex: 'male', weight: 0, doctor_id: '', type: 'in-person', date: getLocalDateString(), time: '', reason: '', compliant: '' });
+      setWalkinPatient({ name: '', phone: '', age: 0, sex: 'male', weight: 0, doctor_id: '', type: 'in-person', date: getLocalDateString(), time: '', reason: '', compliant: '', bcode: '' });
      setSpecialTimePower(false);
      setCustomTime('');
      loadData();
@@ -991,6 +1021,20 @@ if (aptError) {
                   className="input"
                 />
               </div>
+            </div>
+
+            <div className="min-w-[160px] sm:min-w-[200px]">
+              <label className="text-sm font-medium text-slate-600 mb-2 block">
+                <span className="flex items-center gap-1.5">
+                  <Scan className="w-4 h-4" />
+                  বারকোড স্ক্যান
+                </span>
+              </label>
+              <BarcodeScannerInput
+                onPatientFound={handleBarcodePatient}
+                onClear={handleBarcodeClear}
+                placeholder="বারকোড স্ক্যান করুন..."
+              />
             </div>
           </div>
         </Card>

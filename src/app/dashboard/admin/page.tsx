@@ -1,13 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Calendar, Users, Video, CheckCircle, Plus, Clock, ArrowRight, TrendingUp, Activity, Wallet } from 'lucide-react';
+import { Calendar, Users, Video, CheckCircle, Plus, Clock, ArrowRight, TrendingUp, Activity, Wallet, Scan, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { StatCardSkeleton } from '@/components/ui/Skeleton';
+import { BarcodeScannerInput } from '@/components/ui/BarcodeScannerInput';
+import { Button } from '@/components/ui/Button';
+import toast from 'react-hot-toast';
 
 interface Stat {
   label: string;
@@ -28,7 +31,17 @@ export default function AdminDashboard() {
   const [todaySchedule, setTodaySchedule] = useState<any[]>([]);
   const [recentAppointments, setRecentAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scannedPatient, setScannedPatient] = useState<any>(null);
   const router = useRouter();
+
+  const handleBarcodePatient = useCallback((patient: any) => {
+    setScannedPatient(patient);
+    toast.success(`${patient.name} পাওয়া গেছে`);
+  }, []);
+
+  const handleBarcodeClear = useCallback(() => {
+    setScannedPatient(null);
+  }, []);
 
   useEffect(() => {
     loadDashboardData();
@@ -234,6 +247,64 @@ export default function AdminDashboard() {
         </div>
 
         
+
+        {/* Barcode Scanner Card */}
+        <Card className="bg-gradient-to-r from-primary-50 to-blue-50 border border-primary-200/60">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-xl bg-primary-100">
+                <Scan className="w-6 h-6 text-primary-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900">বারকোড স্ক্যানার</h3>
+                <p className="text-sm text-slate-500">রোগীর বারকোড স্ক্যান করে তথ্য দেখুন</p>
+              </div>
+            </div>
+            <div className="flex-1 w-full sm:max-w-sm">
+              <BarcodeScannerInput
+                onPatientFound={handleBarcodePatient}
+                onClear={handleBarcodeClear}
+                placeholder="বারকোড স্ক্যান করুন..."
+                autoFocus={false}
+              />
+            </div>
+          </div>
+
+          {scannedPatient && (
+            <div className="mt-4 pt-4 border-t border-primary-200">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-slate-900">{scannedPatient.name}</p>
+                  <p className="text-sm text-slate-500">
+                    {scannedPatient.phone && `${scannedPatient.phone}`}
+                    {scannedPatient.age && ` | বয়স: ${scannedPatient.age}`}
+                    {scannedPatient.bcode && ` | কোড: ${scannedPatient.bcode}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      localStorage.setItem('openAppointmentModal', 'true');
+                      router.push('/dashboard/admin/appointments');
+                    }}
+                  >
+                    <Plus className="w-4 h-4 mr-1" /> অ্যাপয়েন্টমেন্ট
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      window.open(`https://carescriptrx.vercel.app/dashboard/doctor/prescribe?patient_id=${scannedPatient.id}`, '_blank');
+                    }}
+                  >
+                    <FileText className="w-4 h-4 mr-1" /> প্রেসক্রিব
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Today's Clinic Flow - Timeline */}

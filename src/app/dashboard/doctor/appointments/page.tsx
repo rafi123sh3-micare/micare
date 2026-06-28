@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Search, Calendar, Clock, Video, CheckCircle, X, FileText, ChevronDown, Upload, Check, Plus, Zap, Printer } from 'lucide-react';
+import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
+import { BarcodeScannerInput } from '@/components/ui/BarcodeScannerInput';
+import { Search, Calendar, Clock, Video, CheckCircle, X, FileText, ChevronDown, Upload, Check, Plus, Zap, Printer, Scan } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { supabase, supabase1, generateSerialNumber } from '@/lib/supabase';
 import { uploadToCloudinary } from '@/lib/cloudinary';
@@ -124,6 +126,7 @@ export default function DoctorAppointments() {
     time: '',
     reason: '',
     compliant: '',
+    bcode: '',
   });
   const [creatingWalkin, setCreatingWalkin] = useState(false);
   const [specialTimePower, setSpecialTimePower] = useState(false);
@@ -524,6 +527,33 @@ const statusOrder: Record<string, number> = {
     if (!error) { toast.success('অ্যাপয়েন্টমেন্ট বাতিল হয়েছে'); loadAppointments(); }
   };
 
+  const handleBarcodePatient = useCallback((patient: any) => {
+    if (patient?.name) {
+      setSearch(patient.name);
+      toast.success(`${patient.name} এর ফলাফল দেখানো হয়েছে`);
+    }
+  }, []);
+
+  const handleBarcodeClear = useCallback(() => {
+    setSearch('');
+  }, []);
+
+  useBarcodeScanner({
+    onScan: async (code) => {
+      const { supabase } = await import('@/lib/supabase');
+      const { data: patient } = await supabase
+        .from('patients')
+        .select('id, name, phone, age, bcode')
+        .eq('bcode', code)
+        .maybeSingle();
+      if (patient) {
+        handleBarcodePatient(patient);
+      } else {
+        toast.error('কোনো রোগী খুঁজে পাওয়া যায়নি');
+      }
+    },
+  });
+
   const handleComplete = async (apt: any) => {
     const { error } = await supabase.from('appointments').update({ status: 'completed' }).eq('id', apt.id);
     if (!error) {
@@ -600,7 +630,7 @@ const statusOrder: Record<string, number> = {
       });
       setShowQRModal(true);
       setShowWalkinModal(false);
-      setWalkinPatient({ name: '', phone: '', age: 0, sex: 'male', weight: 0, type: 'in-person', date: getLocalDateString(), time: '', reason: '', compliant: '' });
+      setWalkinPatient({ name: '', phone: '', age: 0, sex: 'male', weight: 0, type: 'in-person', date: getLocalDateString(), time: '', reason: '', compliant: '', bcode: '' });
       setSpecialTimePower(false);
       loadAppointments();
     } catch(err) { toast.error('কিছু সমস্যা হয়েছে'); }
@@ -777,6 +807,20 @@ const statusOrder: Record<string, number> = {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input type="text" placeholder="রোগী খুঁজুন..." value={search} onChange={(e) => setSearch(e.target.value)} className="input pl-10 w-full" />
               </div>
+            </div>
+
+            <div className="min-w-[160px] sm:min-w-[200px]">
+              <label className="text-sm font-medium text-slate-600 mb-2 block">
+                <span className="flex items-center gap-1.5">
+                  <Scan className="w-4 h-4" />
+                  বারকোড স্ক্যান
+                </span>
+              </label>
+              <BarcodeScannerInput
+                onPatientFound={handleBarcodePatient}
+                onClear={handleBarcodeClear}
+                placeholder="বারকোড স্ক্যান করুন..."
+              />
             </div>
           </div>
         </Card>
